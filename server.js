@@ -7,11 +7,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: "*" },
-  maxHttpBufferSize: 10e6  // 10MB to handle larger Scratch .sb3 uploads
+  cors: { 
+    origin: "*", 
+    methods: ["GET", "POST"]
+  },
+  maxHttpBufferSize: 10e6,   // 10MB for .sb3 uploads
+  pingTimeout: 60000,        // Important for Vercel
+  pingInterval: 25000        // Important for Vercel
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -38,6 +43,11 @@ app.get('/download/:code/:index', (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
   res.send(project.buffer);
+});
+
+// This makes the homepage actually load
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // FINAL FIX: Serve final projects EXACTLY like the in-game /download route
@@ -340,5 +350,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
