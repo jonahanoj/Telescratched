@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telescratched</title>
+  <link rel="icon" type="image/x-icon" href="images/SmallLogo.png">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: #f5f5f5;
+    }
+
+    header {
+      background: white;
+      padding: 10px 20px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      max-width: 200px;
+      height: auto;
+      flex-shrink: 0;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    #content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    #sidebar {
+      width: 260px;
+      background: #855CD6;
+      border-left: 1px solid #333;
+      padding: 20px;
+      color: white;
+      overflow-y: auto;
+      flex-shrink: 0;
+      box-shadow: -4px 0 15px rgba(0, 0, 0, 0.3);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      transition: transform 0.4s ease;
+      /* smooth slide-in */
+      transform: translateX(100%);
+      /* starts off-screen */
+    }
+
+    #sidebar.visible {
+      transform: translateX(0);
+      /* slides in when game starts */
+    }
+
+    .section {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    input,
+    button,
+    select {
+      margin: 5px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+
+    button {
+      background: #855CD6;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    button:hover:not(:disabled) {
+      background: rgb(81, 60, 173);
+    }
+
+    #playersList {
+      list-style: none;
+      padding: 0;
+    }
+
+    #playersList li {
+      background: #f8f9fa;
+      margin: 5px 0;
+      padding: 10px;
+      border-radius: 4px;
+      border-left: 3px solid #855CD6;
+    }
+
+    #timerDisplay {
+      font-weight: bold;
+      color: #855CD6;
+      font-size: 2em;
+      text-align: center;
+      margin: 10px 0;
+      padding: 10px;
+      background: #fff3cd;
+      border-radius: 4px;
+    }
+
+    #uploadedList,
+    #agreementsList {
+      font-style: italic;
+      color: #666;
+    }
+
+    #embedArea {
+      margin: 10px 0;
+      height: 60vh;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    #scratchEmbed {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    #loadingSpinner {
+      text-align: center;
+      font-size: 1.2em;
+      color: #666;
+      padding: 40px;
+    }
+
+    #autoSaveBtn {
+      background: #28a745;
+      color: white;
+      font-size: 1.1em;
+      padding: 12px 20px;
+    }
+
+    #playerSidebarList li {
+      margin: 10px 0;
+      padding: 12px;
+      background: white;
+      border-radius: 6px;
+      border-left: 4px solid #ddd;
+    }
+
+    #playerSidebarList li.my-name {
+      background: #e3f2fd;
+      font-weight: bold;
+      border-left-color: rgb(0, 153, 255);
+    }
+
+    #playerSidebarList li.ready {
+      border-left-color: #4caf50;
+    }
+
+    #playerSidebarList .checkmark {
+      color: #4caf50;
+      font-size: 1.2em;
+      float: right;
+    }
+
+    #sidebarTimer {
+      font-size: 1.5em;
+      color: #855CD6;
+      text-align: center;
+      font-weight: bold;
+      padding: 10px;
+      background: #fff3cd;
+      border-radius: 4px;
+    }
+
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #e9ecef;
+      border-radius: 8px;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 20px 0;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+    }
+
+    #gameEndSection {
+      text-align: center;
+    }
+
+    #finalProjectsList {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    #finalProjectsList li {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 4px solid #855CD6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #finalProjectsList a {
+      background: #855CD6;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      text-decoration: none;
+    }
+
+    #finalProjectsList a:hover {
+      background: #0056b3;
+    }
+
+    /* Full-screen round end overlay */
+    #roundEndOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 4em;
+      font-weight: bold;
+      text-align: center;
+      z-index: 1000;
+    }
+
+    #roundEndOverlay p {
+      font-size: 1.5em;
+      margin: 0;
+    }
+
+    #roundEndOverlay .countdown {
+      font-size: 6em;
+      color: #007bff;
+    }
+
+    #copyCodeBtn {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+
+    #copyCodeBtn:hover {
+      background: #0056b3;
+    }
+
+    /* === NEW LANDING PAGE LAYOUT === */
+    .start-container {
+      display: flex;
+      gap: 50px;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      align-items: flex-start;
+    }
+
+    .left-panel {
+      flex: 0 0 400px;
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      padding-top: 10px;
+    }
+
+    .example-card {
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+      transition: transform 0.3s ease;
+    }
+
+    .example-card:hover {
+      transform: translateY(-8px);
+    }
+
+    .example-card img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      border-bottom: 5px solid #667eea;
+    }
+
+    .example-content {
+      padding: 24px;
+    }
+
+    .example-title {
+      font-size: 1.6em;
+      font-weight: 700;
+      margin: 0 0 12px 0;
+      color: #333;
+    }
+
+    .example-desc {
+      font-size: 1.1em;
+      line-height: 1.7;
+      color: #555;
+    }
+
+    button.save-locked {
+      background: #6c9a6c !important;
+      /* muted green */
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 768px) {
+      #finalProjectsGrid {
+        grid-template-columns: 1fr !important;
+        gap: 25px;
+        padding: 0 15px;
+      }
+
+      main {
+        flex-direction: column;
+      }
+
+      #sidebar {
+        width: 100%;
+        order: -1;
+      }
+
+      #embedArea {
+        height: 50vh;
+      }
+
+      .logo {
+        max-width: 150px;
+      }
+
+      #finalProjectsList li {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+      }
+
+      #roundEndOverlay {
+        font-size: 2em;
+      }
+
+      #roundEndOverlay .countdown {
+        font-size: 4em;
+      }
+
+      .start-container {
+        flex-direction: column;
+      }
+
+      .left-panel {
+        flex: none;
+      }
+
+      .right-panel {
+        order: -1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <img src="images/TelescratchedLogo.png" alt="Scratchy Phone Logo" class="logo">
+  </header>
+
+  <main>
+    <div id="content">
+      <!-- NEW BEAUTIFUL START SCREEN -->
+      <div class="start-container" id="startScreen">
+        <!-- LEFT SIDE – Create / Join (compact, not full-width) -->
+        <div class="left-panel">
+          <section class="section">
+            <h2>Create Room</h2>
+            <div class="controls">
+              <input type="text" id="hostName" placeholder="Your name" required>
+              <button onclick="createRoom()" id="createBtn">Create Room</button>
+            </div>
+          </section>
+
+          <section class="section">
+            <h2>Join Room</h2>
+            <div class="controls">
+              <input type="text" id="joinName" placeholder="Your name" required>
+              <input type="text" id="joinCode" placeholder="Room Code" required style="text-transform:uppercase;">
+              <button onclick="joinRoom()" id="joinBtn">Join</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- RIGHT SIDE – Two example cards with images, titles and descriptions -->
+        <div class="right-panel">
+          <div class="example-card">
+            <img src="images/example1.png" alt="Create a Foundation!">
+            <div class="example-content">
+              <h3 class="example-title">Create a Foundation!</h3>
+              <p class="example-desc">
+                Each person starts with nothing, so get creative! The only limit is your imagination.
+              </p>
+            </div>
+          </div>
+
+          <div class="example-card">
+            <img src="images/example2.png" alt="Put YOUR Spin on It.">
+            <div class="example-content">
+              <h3 class="example-title">Put YOUR Spin on It.</h3>
+              <p class="example-desc">
+                You only get a few minutes each cycle to improve the project that you receive. Make it count! Don't
+                waste your turn.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- === ALL YOUR ORIGINAL SECTIONS (unchanged) === -->
+      <!-- Settings (Host Only) -->
+      <section id="settingsSection" class="section hidden">
+        <h2>Set Game Settings</h2>
+        <div class="controls">
+          <label>Cycles (The time it takes for each project to go around a full rotation): <input type="number"
+              id="cycles" value="1" min="1"></label>
+          <label>Minutes per Round: <input type="number" id="timer" value="10" min="1"></label>
+          <label>Max Players: <input type="number" id="maxPlayers" value="4" min="2" max="8"></label>
+          <button onclick="saveSettings()">Save Settings</button>
+        </div>
+      </section>
+
+      <!-- Waiting Room -->
+      <section id="waitingSection" class="section hidden">
+        <h2>Waiting Room - Code: <span id="currentCode"></span> <button id="copyCodeBtn"
+            onclick="copyRoomCode()">Copy</button></h2>
+        <ul id="playersList"></ul>
+        <button id="startBtn" onclick="startGame()">Start Game (Host Only)</button>
+      </section>
+
+      <!-- Game Section -->
+      <section id="gameSection" class="section hidden">
+        <div class="game-header">
+          <h2>Round <span id="roundNum">1</span> | Editing <span id="fromOwner">your own</span>'s project</h2>
+        </div>
+        <div class="controls">
+          <label>Project Name: <input type="text" id="projectNameInput" placeholder="Enter project name"
+              maxlength="50"></label>
+          <button id="autoSaveBtn" onclick="autoSaveAndUpload()" disabled>Save Project</button>
+          <p id="fileStatus" class="status">Work on your game in the Scratch editor below! Click "Save Project" at any
+            time, or let it autosave when the time runs out.</p>
+        </div>
+        <div id="embedArea">
+          <div id="loadingSpinner">Loading Scratch editor...</div>
+          <iframe id="scratchEmbed" allowfullscreen></iframe>
+        </div>
+        <div class="controls">
+          <div class="controls">
+            <button id="nextBtn" onclick="agreeNext()" disabled>
+              Ready to Pass Projects - Don't press until you're 100% done!
+            </button>
+            <p id="readyStatus">Ready: <span id="agreementsList"></span></p>
+            <p id="lockWarning" style="color: #d00; font-weight: bold; display: none;">
+              You cannot save after agreeing to pass your project!
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Game End Section – WITH PLAYABLE EMBEDS (2 per row) -->
+      <section id="gameEndSection" class="section hidden">
+
+        <!-- NEW GAME BUTTON AT THE VERY TOP -->
+        <div style="text-align: center; margin: 40px 0;">
+          <button onclick="location.reload()"
+            style="font-size: 1.6em; padding: 16px 36px; background:#855CD6; border:none; color:white; border-radius:12px; cursor:pointer;">
+            New Game
+          </button>
+        </div>
+
+        <h2 style="text-align: center; margin-bottom:20px;">That's time!</h2>
+        <p style="text-align: center; font-size: 1.4em; margin: 30px 0 50px; color:#444;">
+          Congratulations! Here's what evolved from the original projects:
+        </p>
+
+        <!-- 2-COLUMN GRID OF PLAYABLE PROJECTS -->
+        <div id="finalProjectsGrid"
+          style="display:grid; grid-template-columns:repeat(auto-fit,minmax(520px,1fr)); gap:40px; margin:40px auto; padding:0 20px;">
+        </div>
+      </section>
+    </div>
+
+    <!-- Sidebar (only in game) -->
+    <!-- Sidebar (only visible during the game) -->
+    <div id="sidebar" class="hidden">
+      <h3 style="margin-top:0; color:#ffffff;">Players</h3>
+      <ul id="playerSidebarList" style="list-style:none; padding:0; margin:0; color: black;"></ul>
+
+      <h3 style="margin:25px 0 10px; color:#ffffff;">Time Left</h3>
+      <div id="sidebarTimer"
+        style="font-size:2.4em; font-weight:bold; text-align:center; background:#ffffff; padding:15px; border-radius:12px; color:#855CD6;">
+        --:--
+      </div>
+
+      <div style="margin-top:20px; text-align:center; font-size:0.95em; opacity:0.9;">
+        Round <span id="roundNumSidebar">1</span> / <span id="maxRounds">4</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Full-screen round end overlay -->
+  <div id="roundEndOverlay">
+    <div>
+      <p id="countdownText">Wrapping up round...</p>
+      <div id="countdownDisplay" class="countdown">5</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentRoom = null;
+    let myName = '';
+    let isHost = false;
+    let settingsSaved = false;
+    let gameSettings = {};
+    let players = [];
+    let timerInterval = null;
+    let roundStartTime = null;
+    let myIndex = -1;
+    let lockedMyIndex = undefined;  // New: Lock index post-startup to prevent races
+    let myUploaded = false;
+    let pendingUploadDataURL = null;
+    let agreements = [];
+    let finalProjects = [];  // Store final state for end screen
+    let nameUpdateTimeout = null;  // Debounce for name updates
+    let beepAudio = null;  // New: Preload beep sound
+    let prevSecond = null;  // New: Track previous second for beeps
+    let isTimeoutActive = false;  // New: Flag to track if timeout grace is ongoing (for error suppression)
+    let hasAgreedThisRound = false;  // NEW: Once true, cannot save again
+
+    // Socket.IO error handling (warn only)
+    socket.on('connect_error', (err) => console.warn('Connection error:', err.message));
+    socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
+
+    // Safe DOM update
+    function safeUpdate(id, fn) {
+      const el = document.getElementById(id);
+      if (el) fn(el);
+    }
+
+    function copyRoomCode() {
+      const code = document.getElementById('currentCode').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('copyCodeBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = 'Copied!';
+        setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+        alert('Failed to copy code');
+      });
+    }
+
+    function lockLobby() {
+      safeUpdate('createBtn', el => el.disabled = true);
+      safeUpdate('joinBtn', el => el.disabled = true);
+    }
+
+    function updateStartBtn() {
+      safeUpdate('startBtn', el => {
+        const numPlayers = players.length;
+        el.disabled = !isHost || !settingsSaved || numPlayers < 2;
+        el.style.display = isHost ? 'block' : 'none';
+        if (!el.disabled) el.textContent = `Start Game (${numPlayers} players)`;
+      });
+    }
+
+    function updateTimer(startTime) {
+      roundStartTime = startTime;
+      if (timerInterval) clearInterval(timerInterval);
+      prevSecond = null;  // Reset beep tracking on new timer
+      // New: Preload beep audio on timer start
+      if (!beepAudio) {
+        beepAudio = new Audio('audio/finalbeep.mp3');
+        beepAudio.preload = 'auto';
+      }
+      const updateDisplay = () => {
+        if (!roundStartTime || !gameSettings.timer) return;
+        const elapsed = Date.now() - roundStartTime;
+        let remainingMs = gameSettings.timer - elapsed;
+        if (remainingMs < 0) remainingMs = 0;
+        const mins = Math.floor(remainingMs / 60000);
+        const secs = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+        safeUpdate('timeLeft', el => el.textContent = `${mins}:${secs}`);
+        safeUpdate('sidebarTimer', el => el.textContent = `${mins}:${secs}`);
+
+        // New: Beep for last 10 seconds, once per second
+        const currentSecond = Math.floor(remainingMs / 1000);
+        if (remainingMs <= 10000 && remainingMs > 0 && currentSecond !== prevSecond && beepAudio) {
+          beepAudio.currentTime = 0;
+          beepAudio.play().catch(e => console.warn('Beep play failed:', e));
+          prevSecond = currentSecond;
+        }
+
+        if (remainingMs <= 0) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+      };
+      updateDisplay();
+      timerInterval = setInterval(updateDisplay, 1000);
+    }
+
+    function resetRoundUI() {
+      myUploaded = false;
+      pendingUploadDataURL = null;
+      hasAgreedThisRound = false;           // ← crucial
+      isTimeoutActive = false;
+
+      // —— SAVE BUTTON: always starts fresh and green ——
+      safeUpdate('autoSaveBtn', el => {
+        el.disabled = false;
+        el.textContent = 'Save Project';
+        el.style.background = '';           // clear inline background
+        el.style.opacity = '';              // clear inline opacity
+        el.classList.remove('save-locked'); // ← THIS IS THE KEY LINE
+      });
+
+      // —— READY BUTTON: back to normal ——
+      safeUpdate('nextBtn', el => {
+        el.disabled = true;
+        el.textContent = 'Ready to Pass Projects - Don\'t press until you\'re 100% done!';
+        el.style.background = '';           // reset to blue
+      });
+
+      // —— WARNINGS & STATUS ——
+      safeUpdate('lockWarning', el => el.style.display = 'none');
+      safeUpdate('fileStatus', el =>
+        el.textContent = 'Work on your game in the Scratch editor below! Click "Save Project" at any time, or let it autosave when the time runs out.'
+      );
+
+      // Clear ready list
+      safeUpdate('agreementsList', el => el.textContent = '');
+
+      if (pendingUploadDataURL) revertLocalUpload();
+      safeUpdate('embedArea', el => el.classList.remove('hidden'));
+      safeUpdate('loadingSpinner', el => el.style.display = 'block');
+      safeUpdate('projectNameInput', el => el.disabled = false);
+
+      updatePlayerSidebar();
+    }
+
+    function confirmUpload(filename) {
+      myUploaded = true;
+      pendingUploadDataURL = null;
+
+      // Only re-enable save button if player hasn't agreed yet
+      if (!hasAgreedThisRound) {
+        safeUpdate('autoSaveBtn', el => {
+          el.disabled = false;
+          el.textContent = 'Save Project Again';
+        });
+      }
+
+      safeUpdate('fileStatus', el =>
+        el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
+      );
+
+      // Only enable Ready button if not already agreed
+      if (!hasAgreedThisRound) {
+        safeUpdate('nextBtn', el => el.disabled = false);
+      }
+
+      updatePlayerSidebar();
+    }
+
+    function revertLocalUpload() {
+      pendingUploadDataURL = null;
+      safeUpdate('fileStatus', el => el.textContent = 'Upload failed—try again.');
+      safeUpdate('nextBtn', el => el.disabled = true);
+      safeUpdate('autoSaveBtn', el => el.disabled = false);
+      myUploaded = false;
+    }
+
+    // Updated: Debounced project name update: local only, sync to VM
+    function updateProjectName() {
+      if (nameUpdateTimeout) clearTimeout(nameUpdateTimeout);
+      nameUpdateTimeout = setTimeout(() => {
+        if (!currentRoom || myIndex < 0) return;
+        const newName = document.getElementById('projectNameInput').value.trim() || 'Untitled';
+        const embed = document.getElementById('scratchEmbed');
+        if (embed && embed.contentWindow) {
+          embed.contentWindow.postMessage(
+            { type: 'setProjectName', name: newName },
+            window.location.origin
+          );
+        }
+      }, 500);  // 500ms debounce
+    }
+
+    async function saveFromEditor() {
+      const embed = document.getElementById('scratchEmbed');
+      if (!embed || !embed.contentWindow) {
+        throw new Error('Editor iframe not ready.');
+      }
+      const tw = embed.contentWindow;
+      let attempts = 0;
+      while (attempts < 10 && !tw.vm) {  // Poll up to 10s
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+      }
+      if (!tw.vm) {
+        throw new Error('TurboWarp VM not initialized—wait longer or refresh.');
+      }
+      const blob = await tw.vm.saveProjectSb3();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result.split(',')[1];
+          // Use external input for filename, not VM
+          const input = document.getElementById('projectNameInput');
+          const filename = input ? `${input.value.trim() || 'Untitled'}.sb3` : 'project.sb3';
+          resolve({ base64, filename });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function autoSaveAndUpload() {
+      // BLOCK if on cooldown or already agreed
+      if (!canSave || hasAgreedThisRound) {
+        if (hasAgreedThisRound) {
+          alert('You cannot save anymore — you already clicked "Ready to Pass Projects"');
+        }
+        return;
+      }
+
+      // Immediately lock button + start cooldown
+      canSave = false;
+      safeUpdate('autoSaveBtn', el => {
+        el.disabled = true;
+        el.textContent = 'Saving… (next in 4s)';
+      });
+
+      // Re-enable after 4 seconds
+      if (saveCooldownTimeout) clearTimeout(saveCooldownTimeout);
+      saveCooldownTimeout = setTimeout(() => {
+        canSave = true;
+        safeUpdate('autoSaveBtn', el => {
+          el.disabled = false;
+          el.textContent = hasAgreedThisRound ? 'Saving Locked' : 'Save Project Again';
+        });
+      }, 4000);
+
+      // Save and upload
+      saveFromEditor()
+        .then(({ base64, filename }) => {
+          socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
+
+          // Optimistic UI
+          safeUpdate('fileStatus', el =>
+            el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
+          );
+
+          // Re-enable save button (unless agreed) and enable Ready button
+          if (!hasAgreedThisRound) {
+            safeUpdate('autoSaveBtn', el => {
+              el.disabled = false;
+              el.textContent = 'Save Project Again';
+            });
+          }
+          safeUpdate('nextBtn', el => el.disabled = false);
+        })
+        .catch(err => {
+          safeUpdate('fileStatus', el =>
+            el.textContent = `Save failed: ${err.message}. Button will re-enable in 4s…`
+          );
+
+          // Re-enable button after cooldown (unless agreed)
+          setTimeout(() => {
+            if (!hasAgreedThisRound) {
+              safeUpdate('autoSaveBtn', el => {
+                el.disabled = false;
+                el.textContent = 'Save Project Again';
+              });
+            }
+          }, 4000);
+        });
+    }
+
+    function updatePlayerSidebar() {
+      const sidebarList = document.getElementById('playerSidebarList');
+      if (!sidebarList) return;
+      sidebarList.innerHTML = '';
+      players.forEach((player) => {
+        const li = document.createElement('li');
+        const isMe = player === myName;
+        const isReady = agreements.includes(player);
+        li.className = isMe ? 'my-name' : '';
+        if (isReady) li.classList.add('ready');
+        li.innerHTML = `<span>${player}</span>${isReady ? '<span class="checkmark">✅</span>' : ''}`;
+        sidebarList.appendChild(li);
+      });
+    }
+
+    let canSave = false;           // ← NEW: tracks if saving is allowed
+    let saveCooldownTimeout = null; // ← keeps track of the 4-second timer
+
+    // Call this whenever a new round starts (or game starts)
+    function enableSaveAfterDelay() {
+      canSave = false;
+      safeUpdate('autoSaveBtn', el => {
+        el.disabled = true;
+        el.textContent = 'Save Project';
+      });
+
+      if (saveCooldownTimeout) clearTimeout(saveCooldownTimeout);
+      saveCooldownTimeout = setTimeout(() => {
+        canSave = true;
+        safeUpdate('autoSaveBtn', el => {
+          el.disabled = false;
+          el.textContent = hasAgreedThisRound ? 'Saving Locked' : 'Save Project';
+        });
+      }, 4000); // 4 seconds
+    }
+
+    function showGameEnd(finalData) {
+      finalProjects = finalData.projects.map((proj, idx) => ({
+        owner: finalData.originalOwners[idx],
+        filename: proj.filename,
+        index: idx
+      }));
+
+      // Show end screen
+      document.getElementById('gameSection').classList.add('hidden');
+      document.getElementById('sidebar').style.display = 'none';
+      document.getElementById('gameEndSection').classList.remove('hidden');
+
+      const grid = document.getElementById('finalProjectsGrid');
+      const origin = window.location.origin;
+
+      grid.innerHTML = finalProjects.map(p => {
+        const projectUrl = `${origin}/final-download/${currentRoom}/${p.index}`;
+        const cleanName = p.filename.replace(/\.sb3$/i, '');
+
+        // THIS IS THE KEY: Use editor.html + project_url + your addon — exactly like in-game
+        const embedUrl = `/turbowarp/fullscreen.html?project_url=${encodeURIComponent(projectUrl)}&addons=${encodeURIComponent(origin + '/addon.js')}`;
+
+        return `
+      <div style="background:white; border-radius:18px; overflow:hidden; box-shadow:0 15px 45px rgba(0,0,0,0.22);">
+        <!-- Playable project - loads automatically just like during the game -->
+        <div style="position:relative; padding-top:62.5%; background:#f0f0f0;">
+          <iframe src="${embedUrl}"
+                  allowfullscreen
+                  loading="lazy"
+                  style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;">
+          </iframe>
+        </div>
+
+        <!-- Info + Download -->
+        <div style="padding:24px; text-align:center; background:#f9f9fa;">
+          <h3 style="margin:0 0 8px; font-size:1.5em; color:#333;">
+            ${p.owner}'s Final Project
+          </h3>
+          <p style="margin:8px 0 16px; color:#666; font-style:italic;">
+            ${cleanName || 'Untitled'}
+          </p>
+          <a href="${projectUrl}"
+             download="${p.filename}"
+             style="background:#855CD6; color:white; padding:12px 28px; border-radius:10px; text-decoration:none; font-weight:bold;">
+             Download .sb3
+          </a>
+        </div>
+      </div>
+    `;
+      }).join('');
+
+      // Optional: Set project name inside each embed (like in-game)
+      setTimeout(() => {
+        document.querySelectorAll('#finalProjectsGrid iframe').forEach((iframe, i) => {
+          iframe.onload = () => {
+            const name = finalProjects[i].filename.replace(/\.sb3$/i, '');
+            iframe.contentWindow?.postMessage({ type: 'setProjectName', name }, origin);
+          };
+        });
+      }, 1500);
+    }
+
+    // Updated: Handle round ending countdown (5s, during grace; no lock overlay needed)
+    function startRoundCountdown() {
+      console.log('Starting 5-4-3-2-1 countdown');  // Debug: Check if triggered
+      const overlay = document.getElementById('roundEndOverlay');
+      const textEl = document.getElementById('countdownText');
+      const display = document.getElementById('countdownDisplay');
+      textEl.textContent = 'Wrapping up round...';  // Unified text for both paths
+      overlay.style.display = 'flex';
+      let count = 5;
+      display.textContent = count;
+      const countdownInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          display.textContent = count;
+        } else {
+          clearInterval(countdownInterval);
+          overlay.style.display = 'none';
+        }
+      }, 1000);
+    }
+
+    // Socket events (safe)
+    socket.on('roomCreated', (data) => {
+      hideStartScreen();
+      currentRoom = data.code;
+      myName = document.getElementById('hostName').value.trim();
+      isHost = true;
+      gameSettings = data.settings;
+      settingsSaved = data.confirmed;
+      players = data.players;
+      myIndex = players.indexOf(myName);
+      safeUpdate('roomInfo', el => el.textContent = `Code: ${data.code}. Share it!`);
+      safeUpdate('createSection', el => el.classList.add('hidden'));
+      safeUpdate('joinSection', el => el.classList.add('hidden'));
+      safeUpdate('settingsSection', el => el.classList.remove('hidden'));
+      safeUpdate('currentCode', el => el.textContent = data.code);
+      safeUpdate('waitingSection', el => el.classList.remove('hidden'));
+      updatePlayers(players);
+      updateStartBtn();  // Ensure button state on create
+      lockLobby();
+    });
+
+    socket.on('roomJoined', (data) => {
+      hideStartScreen();
+      currentRoom = data.code;
+      myName = document.getElementById('joinName').value.trim();
+      isHost = data.players[0] === myName;
+      gameSettings = data.settings;
+      settingsSaved = data.confirmed;
+      players = data.players;
+      myIndex = players.indexOf(myName);
+      safeUpdate('joinSection', el => el.classList.add('hidden'));
+      safeUpdate('createSection', el => el.classList.add('hidden'));
+      safeUpdate('waitingSection', el => el.classList.remove('hidden'));
+      safeUpdate('currentCode', el => el.textContent = data.code);
+      if (isHost) safeUpdate('settingsSection', el => el.classList.remove('hidden'));
+      updatePlayers(players);
+      updateStartBtn();  // Ensure button state on join
+      lockLobby();
+    });
+
+    socket.on('playerListUpdate', (pList) => {
+      players = pList;
+      // Safeguard: Recompute myIndex safely
+      myIndex = myName ? players.indexOf(myName) : -1;
+      updatePlayers(players);
+      updateStartBtn();  // Always refresh button after list update
+      // Force UI refresh if in waiting room
+      if (!document.getElementById('waitingSection').classList.contains('hidden')) {
+        safeUpdate('playersList', el => {
+          el.innerHTML = players.map(p => `<li>${p}</li>`).join('');
+        });
+      }
+      updatePlayerSidebar();
+    });
+
+    socket.on('settingsUpdated', (data) => {
+      gameSettings = data.settings;
+      settingsSaved = data.confirmed;
+      safeUpdate('cycles', el => el.value = data.settings.cycles);
+      safeUpdate('timer', el => el.value = Math.ceil(data.settings.timer / 60000));
+      safeUpdate('maxPlayers', el => el.value = data.settings.maxPlayers);
+      updateStartBtn();
+    });
+
+    socket.on('gameStarted', (data) => {
+      players = data.players;
+      myIndex = players.indexOf(myName);
+      lockedMyIndex = myIndex;  // New: Lock index immediately on game start
+      safeUpdate('waitingSection', el => el.classList.add('hidden'));
+      safeUpdate('settingsSection', el => el.classList.add('hidden'));
+      safeUpdate('gameSection', el => el.classList.remove('hidden'));
+      safeUpdate('sidebar', el => el.style.display = 'block');
+      safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
+      updateGameState(data);
+      updateTimer(data.roundStartTime);
+      resetRoundUI();
+      enableSaveAfterDelay();
+      document.getElementById('sidebar').classList.remove('hidden');
+      document.getElementById('sidebar').classList.add('visible');
+      safeUpdate('roundNumSidebar', el => el.textContent = data.round);
+      safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
+    });
+
+    socket.on('roundAdvanced', (data) => {
+      players = data.players;
+      myIndex = players.indexOf(myName);
+      lockedMyIndex = myIndex;  // New: Re-lock on round advance (in case of any drift)
+      safeUpdate('roundNum', el => el.textContent = data.round);
+      safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
+      updateGameState(data);
+      updateTimer(data.roundStartTime);
+      resetRoundUI();
+      enableSaveAfterDelay();
+      document.getElementById('sidebar').classList.remove('hidden');
+      document.getElementById('sidebar').classList.add('visible');
+      safeUpdate('roundNumSidebar', el => el.textContent = data.round);
+      safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
+    });
+
+    socket.on('gameState', updateGameState);
+
+    function updateGameState(data) {
+      agreements = data.agreements;
+      const myProj = data.projects[myIndex];
+      const embed = document.getElementById('scratchEmbed');
+      if (embed) {
+        const origin = window.location.origin;
+        // Prevent beforeunload prompt before reload
+        if (embed.contentWindow) {
+          embed.contentWindow.onbeforeunload = null;
+        }
+        // Load addon
+        embed.src = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
+        safeUpdate('embedArea', el => el.classList.remove('hidden'));
+        safeUpdate('loadingSpinner', el => el.style.display = 'block');
+        embed.onload = () => {
+          safeUpdate('loadingSpinner', el => el.style.display = 'none');
+          // Set internal project name after load
+          const tw = embed.contentWindow;
+          if (tw && tw.vm && myProj.filename) {
+            const cleanName = myProj.filename.replace('.sb3', '');
+            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+          }
+        };
+      }
+      updatePlayerSidebar();
+      const selfUploadStatus = data.uploaded.find(u => u.player === myName);
+      if (selfUploadStatus && selfUploadStatus.uploaded) {
+        if (!myUploaded) confirmUpload(myProj.filename || 'project.sb3');
+      } else if (myUploaded && pendingUploadDataURL) revertLocalUpload();
+      // Init external input with current project name
+      if (myProj.filename) {
+        const cleanName = myProj.filename.replace('.sb3', '');
+        safeUpdate('projectNameInput', el => {
+          el.value = cleanName;
+          // Wire up listeners with debounce
+          el.onchange = updateProjectName;
+          el.onblur = updateProjectName;
+        });
+      }
+    }
+
+    socket.on('playerUploaded', (data) => {
+      if (data.name === myName) return;
+      safeUpdate('uploadedList', el => {
+        let list = el.textContent ? el.textContent.split(', ') : [];
+        if (!list.includes(data.name)) {
+          list.push(`${data.name} (${data.filename})`);
+          el.textContent = list.join(', ');
+        }
+      });
+    });
+
+    socket.on('uploadSuccess', (data) => {
+      confirmUpload(data.filename);
+    });
+
+    socket.on('agreementUpdate', (agreementsUpdate) => {
+      agreements = agreementsUpdate;
+      safeUpdate('agreementsList', el => el.textContent = agreements.join(', ') || 'None');
+      updatePlayerSidebar();
+    });
+
+    // Updated: Set flag for grace/error suppression, but no lock overlay
+    socket.on('roundTimeout', () => {
+      isTimeoutActive = true;  // Set flag for grace period error suppression
+      safeUpdate('timeLeft', el => el.textContent = '0:00');
+      safeUpdate('sidebarTimer', el => el.textContent = '0:00');
+      safeUpdate('fileStatus', el => el.textContent = "Time's up! Auto-saving and locking editor.");
+      safeUpdate('projectNameInput', el => el.disabled = true);  // Lock naming on timeout
+      // Clear flag after 5s grace (matches server)
+      setTimeout(() => { isTimeoutActive = false; }, 5000);
+    });
+
+    // Dedicated auto-save trigger (no duplicate risk now)
+    socket.on('autoSaveNow', () => {
+      if (!myUploaded) {
+        autoSaveAndUpload();
+      }
+    });
+
+    socket.on('gameEnd', (data) => {
+      if (timerInterval) clearInterval(timerInterval);
+      isTimeoutActive = false;  // Reset on game end
+      showGameEnd(data);
+      document.getElementById('sidebar').classList.remove('visible');
+      document.getElementById('sidebar').classList.add('hidden');
+    });
+
+    // Updated: Suppress more errors during timeout grace (now includes "Already uploaded")
+    socket.on('error', (msg) => {
+      const timeoutErrors = ['Round not active.', 'Already uploaded this round.'];
+      if (isTimeoutActive && timeoutErrors.includes(msg) && !myUploaded) {
+        console.warn('Suppressed timeout error:', msg);  // Log but no alert
+        return;
+      }
+      if (pendingUploadDataURL) revertLocalUpload();
+      safeUpdate('fileStatus', el => el.textContent = `Error: ${msg}`);
+      alert('Error: ' + msg);
+    });
+
+    socket.on('roundEnding', startRoundCountdown);
+
+    function createRoom() {
+      const name = document.getElementById('hostName').value.trim();
+      if (!name) return alert('Enter name');
+      socket.emit('createRoom', { name });
+    }
+
+    function saveSettings() {
+      const settings = {
+        cycles: parseInt(document.getElementById('cycles').value) || 1,
+        timer: parseInt(document.getElementById('timer').value) || 10,
+        maxPlayers: parseInt(document.getElementById('maxPlayers').value) || 4
+      };
+      if (settings.cycles < 1 || settings.timer < 1) return alert('Cycles >=1, Timer >=1 min');
+      socket.emit('setSettings', { code: currentRoom, settings });
+      document.getElementById('settingsSection').classList.add('hidden');
+    }
+
+    function startGame() {
+      if (!currentRoom) return;
+      socket.emit('startGame', currentRoom);
+    }
+
+    function joinRoom() {
+      const name = document.getElementById('joinName').value.trim();
+      const code = document.getElementById('joinCode').value.trim().toUpperCase();
+      if (!name || !code) return alert('Enter name and code');
+      socket.emit('joinRoom', { code, name });
+    }
+
+    function updatePlayers(pList) {
+      players = pList;
+      const list = document.getElementById('playersList');
+      if (list) list.innerHTML = players.map(p => `<li>${p}</li>`).join('');
+    }
+
+    function agreeNext() {
+      if (hasAgreedThisRound) return;  // Already agreed
+
+      socket.emit('agreeNext', currentRoom);
+
+      hasAgreedThisRound = true;
+
+      // UI: Lock everything
+      const nextBtn = document.getElementById('nextBtn');
+      const saveBtn = document.getElementById('autoSaveBtn');
+      const warning = document.getElementById('lockWarning');
+
+      if (nextBtn) {
+        nextBtn.textContent = 'Locked - Waiting for others';
+        nextBtn.disabled = true;
+        nextBtn.style.background = '#6c757d';
+      }
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving Locked - Feel Free to Playtest While Waiting!';
+        saveBtn.classList.add('save-locked');
+        // Remove any old inline styles that might interfere
+        saveBtn.style.background = '';
+        saveBtn.style.opacity = '';
+      }
+      if (warning) {
+        warning.style.display = 'block';
+      }
+
+      safeUpdate('fileStatus', el =>
+        el.textContent = 'You cannot save anymore. You already clicked "Ready to Pass Projects"'
+      );
+    }
+
+    function hideStartScreen() {
+      const el = document.getElementById('startScreen');
+      if (el) el.style.display = 'none';
+    }
+
+  </script>
+</body>
+
+</html>
