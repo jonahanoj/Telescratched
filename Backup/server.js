@@ -7,11 +7,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: "*" },
-  maxHttpBufferSize: 10e6  // 10MB to handle larger Scratch .sb3 uploads
+  cors: { 
+    origin: "*", 
+    methods: ["GET", "POST"]
+  },
+  maxHttpBufferSize: 10e6,   // 10MB for .sb3 uploads
+  pingTimeout: 60000,        // Important for Vercel
+  pingInterval: 25000        // Important for Vercel
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -38,6 +43,11 @@ app.get('/download/:code/:index', (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
   res.send(project.buffer);
+});
+
+// This makes the homepage actually load
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // FINAL FIX: Serve final projects EXACTLY like the in-game /download route
@@ -178,7 +188,7 @@ function startRoundTimer(room, code, startTime) {
 
       // Advance immediately (no extra wait—countdown covered it)
       advanceRound(room, code);
-    }, 5000);  // 5s total grace/countdown
+    }, 10000);  // 5s total grace/countdown
   }, room.settings.timer);
 }
 
@@ -302,7 +312,6 @@ io.on('connection', (socket) => {
       room.uploaded[index] = true;
       const playerName = room.players[index].name;
       io.to(code).emit('playerUploaded', { name: playerName, filename });
-      io.to(code).emit('gameState', getFullGameState(room));
       socket.emit('uploadSuccess', { filename });
     } catch (err) {
       console.error('Upload error:', err);
@@ -322,7 +331,7 @@ io.on('connection', (socket) => {
     if (room.agreements.size === room.players.length) {
       // Start 5s countdown before advance
       io.to(code).emit('roundEnding');
-      setTimeout(() => advanceRound(room, code), 5000);
+      setTimeout(() => advanceRound(room, code), 10000);
     }
   });
 
@@ -340,5 +349,7 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
+
+module.exports = server;

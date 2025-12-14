@@ -253,6 +253,10 @@
       align-items: center;
     }
 
+    header.hidden {
+      display: none;
+    }
+
     #finalProjectsList a {
       background: #855CD6;
       color: white;
@@ -810,7 +814,7 @@
       canSave = false;
       safeUpdate('autoSaveBtn', el => {
         el.disabled = true;
-        el.textContent = 'Saving… (next in 4s)';
+        el.textContent = 'Saving… (next in 10s)';
       });
 
       // Re-enable after 4 seconds
@@ -821,7 +825,7 @@
           el.disabled = false;
           el.textContent = hasAgreedThisRound ? 'Saving Locked' : 'Save Project Again';
         });
-      }, 4000);
+      }, 10000);
 
       // Save and upload
       saveFromEditor()
@@ -844,7 +848,7 @@
         })
         .catch(err => {
           safeUpdate('fileStatus', el =>
-            el.textContent = `Save failed: ${err.message}. Button will re-enable in 4s…`
+            el.textContent = `Save failed: ${err.message}. Button will re-enable in 10s…`
           );
 
           // Re-enable button after cooldown (unless agreed)
@@ -855,7 +859,7 @@
                 el.textContent = 'Save Project Again';
               });
             }
-          }, 4000);
+          }, 10000);
         });
     }
 
@@ -892,7 +896,7 @@
           el.disabled = false;
           el.textContent = hasAgreedThisRound ? 'Saving Locked' : 'Save Project';
         });
-      }, 4000); // 4 seconds
+      }, 10000); // 4 seconds
     }
 
     function showGameEnd(finalData) {
@@ -965,7 +969,7 @@
       const display = document.getElementById('countdownDisplay');
       textEl.textContent = 'Wrapping up round...';  // Unified text for both paths
       overlay.style.display = 'flex';
-      let count = 5;
+      let count = 10;
       display.textContent = count;
       const countdownInterval = setInterval(() => {
         count--;
@@ -1049,14 +1053,39 @@
       safeUpdate('waitingSection', el => el.classList.add('hidden'));
       safeUpdate('settingsSection', el => el.classList.add('hidden'));
       safeUpdate('gameSection', el => el.classList.remove('hidden'));
+      document.querySelector('header').classList.add('hidden');
       safeUpdate('sidebar', el => el.style.display = 'block');
       safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
       updateGameState(data);
+      const embed = document.getElementById('scratchEmbed');
+      if (embed) {
+        const origin = window.location.origin;
+        const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
+
+        if (embed.contentWindow) {
+          embed.contentWindow.onbeforeunload = null;
+        }
+
+        embed.src = newUrl;
+
+        safeUpdate('loadingSpinner', el => el.style.display = 'block');
+
+        embed.onload = () => {
+          safeUpdate('loadingSpinner', el => el.style.display = 'none');
+
+          const tw = embed.contentWindow;
+          if (tw && tw.vm && data.projects[myIndex].filename) {
+            const cleanName = data.projects[myIndex].filename.replace('.sb3', '');
+            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+          }
+        };
+      }
       updateTimer(data.roundStartTime);
       resetRoundUI();
       enableSaveAfterDelay();
       document.getElementById('sidebar').classList.remove('hidden');
       document.getElementById('sidebar').classList.add('visible');
+      document.querySelector('header').classList.add('hidden');
       safeUpdate('roundNumSidebar', el => el.textContent = data.round);
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
     });
@@ -1068,6 +1097,29 @@
       safeUpdate('roundNum', el => el.textContent = data.round);
       safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
       updateGameState(data);
+      const embed = document.getElementById('scratchEmbed');
+      if (embed) {
+        const origin = window.location.origin;
+        const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
+
+        if (embed.contentWindow) {
+          embed.contentWindow.onbeforeunload = null;
+        }
+
+        embed.src = newUrl;
+
+        safeUpdate('loadingSpinner', el => el.style.display = 'block');
+
+        embed.onload = () => {
+          safeUpdate('loadingSpinner', el => el.style.display = 'none');
+
+          const tw = embed.contentWindow;
+          if (tw && tw.vm && data.projects[myIndex].filename) {
+            const cleanName = data.projects[myIndex].filename.replace('.sb3', '');
+            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+          }
+        };
+      }
       updateTimer(data.roundStartTime);
       resetRoundUI();
       enableSaveAfterDelay();
@@ -1082,42 +1134,28 @@
     function updateGameState(data) {
       agreements = data.agreements;
       const myProj = data.projects[myIndex];
-      const embed = document.getElementById('scratchEmbed');
-      if (embed) {
-        const origin = window.location.origin;
-        // Prevent beforeunload prompt before reload
-        if (embed.contentWindow) {
-          embed.contentWindow.onbeforeunload = null;
-        }
-        // Load addon
-        embed.src = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
-        safeUpdate('embedArea', el => el.classList.remove('hidden'));
-        safeUpdate('loadingSpinner', el => el.style.display = 'block');
-        embed.onload = () => {
-          safeUpdate('loadingSpinner', el => el.style.display = 'none');
-          // Set internal project name after load
-          const tw = embed.contentWindow;
-          if (tw && tw.vm && myProj.filename) {
-            const cleanName = myProj.filename.replace('.sb3', '');
-            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
-          }
-        };
-      }
+
       updatePlayerSidebar();
+
+      // Handle your own upload confirmation ONLY (UI stuff, no reload)
       const selfUploadStatus = data.uploaded.find(u => u.player === myName);
       if (selfUploadStatus && selfUploadStatus.uploaded) {
         if (!myUploaded) confirmUpload(myProj.filename || 'project.sb3');
-      } else if (myUploaded && pendingUploadDataURL) revertLocalUpload();
-      // Init external input with current project name
+      } else if (myUploaded && pendingUploadDataURL) {
+        revertLocalUpload();
+      }
+
+      // Update project name input
       if (myProj.filename) {
         const cleanName = myProj.filename.replace('.sb3', '');
         safeUpdate('projectNameInput', el => {
           el.value = cleanName;
-          // Wire up listeners with debounce
           el.onchange = updateProjectName;
           el.onblur = updateProjectName;
         });
       }
+
+      // IMPORTANT: NO iframe reload here! Uploads from others do NOTHING to the editor
     }
 
     socket.on('playerUploaded', (data) => {
@@ -1165,6 +1203,7 @@
       showGameEnd(data);
       document.getElementById('sidebar').classList.remove('visible');
       document.getElementById('sidebar').classList.add('hidden');
+      document.querySelector('header').classList.add('hidden');
     });
 
     // Updated: Suppress more errors during timeout grace (now includes "Already uploaded")

@@ -188,7 +188,7 @@ function startRoundTimer(room, code, startTime) {
 
       // Advance immediately (no extra wait—countdown covered it)
       advanceRound(room, code);
-    }, 5000);  // 5s total grace/countdown
+    }, 10000);  // 5s total grace/countdown
   }, room.settings.timer);
 }
 
@@ -312,7 +312,6 @@ io.on('connection', (socket) => {
       room.uploaded[index] = true;
       const playerName = room.players[index].name;
       io.to(code).emit('playerUploaded', { name: playerName, filename });
-      io.to(code).emit('gameState', getFullGameState(room));
       socket.emit('uploadSuccess', { filename });
     } catch (err) {
       console.error('Upload error:', err);
@@ -332,7 +331,7 @@ io.on('connection', (socket) => {
     if (room.agreements.size === room.players.length) {
       // Start 5s countdown before advance
       io.to(code).emit('roundEnding');
-      setTimeout(() => advanceRound(room, code), 5000);
+      setTimeout(() => advanceRound(room, code), 10000);
     }
   });
 
