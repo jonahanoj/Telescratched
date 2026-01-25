@@ -18,421 +18,422 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      background-color: #f5f5f5;
+      background-color: #F8A936;;
+      background-size: 400% 400%;
     }
 
-    header {
-      background: white;
-      padding: 10px 20px;
-      border-bottom: 1px solid #ddd;
-      display: flex;
-      align-items: center;
-      flex-shrink: 0;
-    }
-
-    .logo {
-      max-width: 200px;
-      height: auto;
-      flex-shrink: 0;
-    }
-
-    main {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
-
-    #content {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    #sidebar {
-      width: 260px;
-      background: #855CD6;
-      border-left: 1px solid #333;
-      padding: 20px;
-      color: white;
-      overflow-y: auto;
-      flex-shrink: 0;
-      box-shadow: -4px 0 15px rgba(0, 0, 0, 0.3);
-      font-family: 'Segoe UI', Arial, sans-serif;
-      transition: transform 0.4s ease;
-      /* smooth slide-in */
-      transform: translateX(100%);
-      /* starts off-screen */
-    }
-
-    #sidebar.visible {
-      transform: translateX(0);
-      /* slides in when game starts */
-    }
-
-    .section {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 20px;
-      flex-shrink: 0;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    input,
-    button,
-    select {
-      margin: 5px;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 16px;
-    }
-
-    button {
-      background: #855CD6;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-
-    button:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
-
-    button:hover:not(:disabled) {
-      background: rgb(81, 60, 173);
-    }
-
-    #playersList {
-      list-style: none;
-      padding: 0;
-    }
-
-    #playersList li {
-      background: #f8f9fa;
-      margin: 5px 0;
-      padding: 10px;
-      border-radius: 4px;
-      border-left: 3px solid #F8A936;
-    }
-
-    #timerDisplay {
-      font-weight: bold;
-      color: #855CD6;
-      font-size: 2em;
-      text-align: center;
-      margin: 10px 0;
-      padding: 10px;
-      background: #fff3cd;
-      border-radius: 4px;
-    }
-
-    #uploadedList,
-    #agreementsList {
-      font-style: italic;
-      color: #666;
-    }
-
-    #embedArea {
-      margin: 10px 0;
-      height: 60vh;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      position: relative;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-
-    #scratchEmbed {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
-    #loadingSpinner {
-      text-align: center;
-      font-size: 1.2em;
-      color: #666;
-      padding: 40px;
-    }
-
-    #autoSaveBtn {
-      background: #28a745;
-      color: white;
-      font-size: 1.1em;
-      padding: 12px 20px;
-    }
-
-    #playerSidebarList li {
-      margin: 10px 0;
-      padding: 12px;
-      background: white;
-      border-radius: 6px;
-      border-left: 4px solid #ddd;
-    }
-
-    #playerSidebarList li.my-name {
-      background: #ffeaca;
-      font-weight: bold;
-      border-left-color: #F8A936;
-    }
-
-    #playerSidebarList li.ready {
-      border-left-color: #4caf50;
-    }
-
-    #playerSidebarList .checkmark {
-      color: #4caf50;
-      font-size: 1.2em;
-      float: right;
-    }
-
-    #sidebarTimer {
-      font-size: 1.5em;
-      color: #F8A936;
-      text-align: center;
-      font-weight: bold;
-      padding: 10px;
-      background: #fff3cd;
-      border-radius: 4px;
-    }
-
-    .game-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      padding: 15px;
-      background: #e9ecef;
-      border-radius: 8px;
-    }
-
-    .controls {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin: 20px 0;
-    }
-
-    .status {
-      padding: 10px;
-      border-radius: 4px;
-      background: #d4edda;
-      border: 1px solid #c3e6cb;
-      color: #155724;
-    }
-
-    #gameEndSection {
-      text-align: center;
-    }
-
-    #finalProjectsList {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      gap: 10px;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    #finalProjectsList li {
-      background: #f8f9fa;
-      padding: 15px;
-      border-radius: 8px;
-      border-left: 4px solid #855CD6;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    header.hidden {
-      display: none;
-    }
-
-    #finalProjectsList a {
-      background: #855CD6;
-      color: white;
-      padding: 8px 12px;
-      border-radius: 4px;
-      text-decoration: none;
-    }
-
-    #finalProjectsList a:hover {
-      background: #0056b3;
-    }
-
-    /* Full-screen round end overlay */
-    #roundEndOverlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: rgba(0, 0, 0, 0.9);
-      color: white;
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      font-size: 4em;
-      font-weight: bold;
-      text-align: center;
-      z-index: 1000;
-    }
-
-    #roundEndOverlay p {
-      font-size: 1.5em;
-      margin: 0;
-    }
-
-    #roundEndOverlay .countdown {
-      font-size: 6em;
-      color: #F8A936;
-    }
-
-    #copyCodeBtn {
-      background: #F8A936;
-      color: white;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-      margin-left: 10px;
-      vertical-align: middle;
-    }
-
-    #copyCodeBtn:hover {
-      background: #d18b21;
-    }
-
-    /* === NEW LANDING PAGE LAYOUT === */
-    .start-container {
-      display: flex;
-      gap: 50px;
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 20px;
-      align-items: flex-start;
-    }
-
-    .left-panel {
-      flex: 0 0 400px;
-      background: white;
-      border-radius: 16px;
-      padding: 30px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-    }
-
-    .right-panel {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 30px;
-      padding-top: 10px;
-    }
-
-    .example-card {
-      background: white;
-      border-radius: 14px;
-      overflow: hidden;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-      transition: transform 0.3s ease;
-    }
-
-    .example-card:hover {
-      transform: translateY(-8px);
-    }
-
-    .example-card img {
-      width: 100%;
-      height: 300px;
-      object-fit: cover;
-      border-bottom: 5px solid #667eea;
-    }
-
-    .example-content {
-      padding: 24px;
-    }
-
-    .example-title {
-      font-size: 1.6em;
-      font-weight: 700;
-      margin: 0 0 12px 0;
-      color: #333;
-    }
-
-    .example-desc {
-      font-size: 1.1em;
-      line-height: 1.7;
-      color: #555;
-    }
-
-    button.save-locked {
-      background: #6c9a6c !important;
-      /* muted green */
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    @media (max-width: 768px) {
-      #finalProjectsGrid {
-        grid-template-columns: 1fr !important;
-        gap: 25px;
-        padding: 0 15px;
-      }
-
-      main {
-        flex-direction: column;
-      }
-
-      #sidebar {
-        width: 100%;
-        order: -1;
-      }
-
-      #embedArea {
-        height: 50vh;
+      header {
+        background: linear-gradient(45deg, rgb(255, 255, 255), #855CD6);
+        padding: 10px 20px;
+        border-bottom: 10px solid #575757;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
       }
 
       .logo {
-        max-width: 150px;
+        max-width: 200px;
+        height: auto;
+        flex-shrink: 0;
       }
 
-      #finalProjectsList li {
+      main {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+
+      #content {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      #sidebar {
+        width: 260px;
+        background: linear-gradient(45deg, #ffffff, #855CD6);
+        border-left: 1px solid #333;
+        padding: 20px;
+        color: white;
+        overflow-y: auto;
+        flex-shrink: 0;
+        box-shadow: -4px 0 15px rgba(0, 0, 0, 0.3);
+        font-family: 'Segoe UI', Arial, sans-serif;
+        transition: transform 0.4s ease;
+        /* smooth slide-in */
+        transform: translateX(100%);
+        /* starts off-screen */
+      }
+
+      #sidebar.visible {
+        transform: translateX(0);
+        /* slides in when game starts */
+      }
+
+      .section {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        flex-shrink: 0;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      input,
+      button,
+      select {
+        margin: 5px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+      }
+
+      button {
+        background: #855CD6;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+
+      button:hover:not(:disabled) {
+        background: rgb(81, 60, 173);
+      }
+
+      #playersList {
+        list-style: none;
+        padding: 0;
+      }
+
+      #playersList li {
+        background: #f8f9fa;
+        margin: 5px 0;
+        padding: 10px;
+        border-radius: 4px;
+        border-left: 3px solid #F8A936;
+      }
+
+      #timerDisplay {
+        font-weight: bold;
+        color: #855CD6;
+        font-size: 2em;
+        text-align: center;
+        margin: 10px 0;
+        padding: 10px;
+        background: #fff3cd;
+        border-radius: 4px;
+      }
+
+      #uploadedList,
+      #agreementsList {
+        font-style: italic;
+        color: #666;
+      }
+
+      #embedArea {
+        margin: 10px 0;
+        height: 60vh;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      #scratchEmbed {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+
+      #loadingSpinner {
+        text-align: center;
+        font-size: 1.2em;
+        color: #666;
+        padding: 40px;
+      }
+
+      #autoSaveBtn {
+        background: #28a745;
+        color: white;
+        font-size: 1.1em;
+        padding: 12px 20px;
+      }
+
+      #playerSidebarList li {
+        margin: 10px 0;
+        padding: 12px;
+        background: white;
+        border-radius: 6px;
+        border-left: 4px solid #ddd;
+      }
+
+      #playerSidebarList li.my-name {
+        background: #ffeaca;
+        font-weight: bold;
+        border-left-color: #F8A936;
+      }
+
+      #playerSidebarList li.ready {
+        border-left-color: #4caf50;
+      }
+
+      #playerSidebarList .checkmark {
+        color: #4caf50;
+        font-size: 1.2em;
+        float: right;
+      }
+
+      #sidebarTimer {
+        font-size: 1.5em;
+        color: #F8A936;
+        text-align: center;
+        font-weight: bold;
+        padding: 10px;
+        background: #fff3cd;
+        border-radius: 4px;
+      }
+
+      .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #e9ecef;
+        border-radius: 8px;
+      }
+
+      .controls {
+        display: flex;
         flex-direction: column;
         gap: 10px;
+        margin: 20px 0;
+      }
+
+      .status {
+        padding: 10px;
+        border-radius: 4px;
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+      }
+
+      #gameEndSection {
         text-align: center;
       }
 
+      #finalProjectsList {
+        list-style: none;
+        padding: 0;
+        display: grid;
+        gap: 10px;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      #finalProjectsList li {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #855CD6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      header.hidden {
+        display: none;
+      }
+
+      #finalProjectsList a {
+        background: #855CD6;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+      }
+
+      #finalProjectsList a:hover {
+        background: #0056b3;
+      }
+
+      /* Full-screen round end overlay */
       #roundEndOverlay {
-        font-size: 2em;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-size: 4em;
+        font-weight: bold;
+        text-align: center;
+        z-index: 1000;
+      }
+
+      #roundEndOverlay p {
+        font-size: 1.5em;
+        margin: 0;
       }
 
       #roundEndOverlay .countdown {
-        font-size: 4em;
+        font-size: 6em;
+        color: #F8A936;
       }
 
+      #copyCodeBtn {
+        background: #F8A936;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-left: 10px;
+        vertical-align: middle;
+      }
+
+      #copyCodeBtn:hover {
+        background: #d18b21;
+      }
+
+      /* === NEW LANDING PAGE LAYOUT === */
       .start-container {
-        flex-direction: column;
+        display: flex;
+        gap: 50px;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+        align-items: flex-start;
       }
 
       .left-panel {
-        flex: none;
+        flex: 0 0 400px;
+        background: white;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
       }
 
       .right-panel {
-        order: -1;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        padding-top: 10px;
       }
-    }
+
+      .example-card {
+        background: white;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        transition: transform 0.3s ease;
+      }
+
+      .example-card:hover {
+        transform: translateY(-8px);
+      }
+
+      .example-card img {
+        width: 100%;
+        height: 300px;
+        object-fit: cover;
+        border-bottom: 5px solid #667eea;
+      }
+
+      .example-content {
+        padding: 24px;
+      }
+
+      .example-title {
+        font-size: 1.6em;
+        font-weight: 700;
+        margin: 0 0 12px 0;
+        color: #333;
+      }
+
+      .example-desc {
+        font-size: 1.1em;
+        line-height: 1.7;
+        color: #555;
+      }
+
+      button.save-locked {
+        background: #6c9a6c !important;
+        /* muted green */
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      @media (max-width: 768px) {
+        #finalProjectsGrid {
+          grid-template-columns: 1fr !important;
+          gap: 25px;
+          padding: 0 15px;
+        }
+
+        main {
+          flex-direction: column;
+        }
+
+        #sidebar {
+          width: 100%;
+          order: -1;
+        }
+
+        #embedArea {
+          height: 50vh;
+        }
+
+        .logo {
+          max-width: 150px;
+        }
+
+        #finalProjectsList li {
+          flex-direction: column;
+          gap: 10px;
+          text-align: center;
+        }
+
+        #roundEndOverlay {
+          font-size: 2em;
+        }
+
+        #roundEndOverlay .countdown {
+          font-size: 4em;
+        }
+
+        .start-container {
+          flex-direction: column;
+        }
+
+        .left-panel {
+          flex: none;
+        }
+
+        .right-panel {
+          order: -1;
+        }
+      }
   </style>
 </head>
 

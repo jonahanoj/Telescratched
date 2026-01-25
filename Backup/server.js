@@ -212,8 +212,8 @@ function advanceRound(room, code) {
       originalOwners: originalOwners
     };
     io.to(code).emit('gameEnd', finalState);
-    // Cleanup after 30s
-    setTimeout(() => rooms.delete(code), 30000);
+    // Cleanup after 10mins
+    setTimeout(() => rooms.delete(code), 600000);
     return;
   }
   const newStartTime = Date.now();
