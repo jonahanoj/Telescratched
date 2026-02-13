@@ -18,22 +18,37 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      background-color: #f5f5f5;
+      background: linear-gradient(135deg, #FF5324, #F8A936);
+      background-size: 100%;
     }
 
-    header {
-      background: white;
-      padding: 10px 20px;
-      border-bottom: 1px solid #ddd;
-      display: flex;
-      align-items: center;
-      flex-shrink: 0;
+    .tiled-background {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background-image: url("images/tiled_pattern.png");
+      background-size: 800px 600px;
+      background-repeat: repeat;
+      animation: diagonal-move 60s linear infinite;
+      pointer-events: none;
+      /* so clicks go through to content */
+    }
+
+    @keyframes diagonal-move {
+      0% {
+        background-position: 0 0;
+      }
+
+      100% {
+        background-position: 800px 600px;
+      }
     }
 
     .logo {
-      max-width: 200px;
+      display: block;
+      max-width: 15%;
       height: auto;
-      flex-shrink: 0;
+      margin: auto;
     }
 
     main {
@@ -53,7 +68,7 @@
 
     #sidebar {
       width: 260px;
-      background: #855CD6;
+      background-color: #855CD6;
       border-left: 1px solid #333;
       padding: 20px;
       color: white;
@@ -437,6 +452,8 @@
 </head>
 
 <body>
+  <div class="tiled-background"></div>
+
   <header>
     <img src="images/TelescratchedLogo.png" alt="Scratchy Phone Logo" class="logo">
   </header>
