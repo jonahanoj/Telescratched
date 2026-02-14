@@ -210,6 +210,13 @@
       border-left: 4px solid #ddd;
     }
 
+    #createImageBtn:hover,
+    #joinImageBtn:hover {
+      transform: scale(1.04);
+      filter: brightness(1.08);
+      transition: all 0.18s ease;
+    }
+
     #playerSidebarList li.my-name {
       background: #ffeaca;
       font-weight: bold;
@@ -329,6 +336,25 @@
     #roundEndOverlay .countdown {
       font-size: 6em;
       color: #F8A936;
+    }
+
+    .tab-button.active {
+      background: white;
+      border-bottom: 3px solid #855CD6;
+      color: #855CD6;
+    }
+
+    .tab-button {
+      background: white;
+      color: #969696;
+    }
+
+    .tab-button:hover {
+      background: #f8f8ff;
+    }
+
+    .tab-content.hidden {
+      display: none;
     }
 
     #copyCodeBtn {
@@ -497,23 +523,44 @@
       <div class="start-container" id="startScreen">
         <!-- LEFT SIDE – Create / Join (compact, not full-width) -->
         <div class="left-panel">
-          <section class="section">
-            <h2>Create Room</h2>
-            <div class="controls">
-              <input type="text" id="hostName" placeholder="Your name" required>
-              <button onclick="createRoom()" id="createBtn">Create Room</button>
-            </div>
-          </section>
 
-          <section class="section">
-            <h2>Join Room</h2>
-            <div class="controls">
-              <input type="text" id="joinName" placeholder="Your name" required>
-              <input type="text" id="joinCode" placeholder="Room Code" required style="text-transform:uppercase;">
-              <button onclick="joinRoom()" id="joinBtn">Join</button>
-            </div>
-          </section>
+          <!-- Tabs header -->
+          <div style="display: flex; background: #f0f0f5; border: 2px solid #ccc;">
+            <button id="tab-create" class="tab-button active"
+              style="flex:1; padding: 16px; font-weight: bold; background: none; border: none; cursor: pointer; font-size: 1.1em;">
+              Create
+            </button>
+            <button id="tab-join" class="tab-button"
+              style="flex:1; padding: 16px; font-weight: bold; background: none; border: none; cursor: pointer; font-size: 1.1em;">
+              Join
+            </button>
+          </div>
+
+          <!-- Tab contents -->
+          <div id="tab-content-create" class="tab-content" style="padding: 30px 25px; text-align: center;">
+            <input type="text" id="playerName" placeholder="Your Name" required
+              style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 35px; display: block; margin-left: auto; margin-right: auto;">
+
+            <img src="images/CreateRoomButton.png" alt="Create Room" id="createImageBtn"
+              style="width: 70%; max-width: 340px; cursor: pointer; display: block; margin: 0 auto;">
+          </div>
+
+          <div id="tab-content-join" class="tab-content hidden" style="padding: 30px 25px; text-align: center;">
+            <input type="text" id="playerName" placeholder="Your Name" required
+              style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 20px; display: block; margin-left: auto; margin-right: auto;">
+
+            <input type="text" id="joinCode" placeholder="Room code" required
+              style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; text-transform: uppercase; margin-bottom: 25px; display: block; margin-left: auto; margin-right: auto;">
+
+            <img src="images/JoinRoomButton.png" alt="Join Room" id="joinImageBtn"
+              style="width: 70%; max-width: 340px; cursor: pointer; display: block; margin: 0 auto;">
+          </div>
+
         </div>
+
+        <!-- Hidden inputs so original createRoom() and joinRoom() don't crash -->
+        <input type="hidden" id="hostName">
+        <input type="hidden" id="joinName">
 
         <!-- RIGHT SIDE – Two example cards with images, titles and descriptions -->
         <div class="right-panel">
@@ -1467,7 +1514,62 @@
         exitCleanFullscreen();
       }
     });
+
+    // Connect image buttons to the existing functions
+    document.getElementById('createImageBtn').addEventListener('click', () => {
+      const name = document.getElementById('playerName').value.trim();
+      if (!name) {
+        alert('Please enter your name');
+        return;
+      }
+      document.getElementById('hostName').value = name;     // fill hidden field
+      createRoom();                                         // ← your original function
+    });
+
+    document.getElementById('joinImageBtn').addEventListener('click', () => {
+      const name = document.getElementById('playerName').value.trim();
+      const code = document.getElementById('joinCode').value.trim().toUpperCase();
+
+      if (!name) {
+        alert('Please enter your name');
+        return;
+      }
+      if (!code) {
+        alert('Please enter the room code');
+        return;
+      }
+
+      document.getElementById('joinName').value = name;     // fill hidden field
+      joinRoom();                                           // ← your original function
+    });
+
+    // Tab switching
+    const tabCreate = document.getElementById('tab-create');
+    const tabJoin = document.getElementById('tab-join');
+    const contentCreate = document.getElementById('tab-content-create');
+    const contentJoin = document.getElementById('tab-content-join');
+
+    function showCreate() {
+      tabCreate.classList.add('active');
+      tabJoin.classList.remove('active');
+      contentCreate.classList.remove('hidden');
+      contentJoin.classList.add('hidden');
+    }
+
+    function showJoin() {
+      tabJoin.classList.add('active');
+      tabCreate.classList.remove('active');
+      contentJoin.classList.remove('hidden');
+      contentCreate.classList.add('hidden');
+    }
+
+    tabCreate.addEventListener('click', showCreate);
+    tabJoin.addEventListener('click', showJoin);
+
+    // Optional: start on Create tab
+    showCreate();
   </script>
+  <script>(function () { function c() { var b = a.contentDocument || a.contentWindow.document; if (b) { var d = b.createElement('script'); d.innerHTML = "window.__CF$cv$params={r:'9cda6295bfb48268',t:'MTc3MTA0OTI0NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);"; b.getElementsByTagName('head')[0].appendChild(d) } } if (document.body) { var a = document.createElement('iframe'); a.height = 1; a.width = 1; a.style.position = 'absolute'; a.style.top = 0; a.style.left = 0; a.style.border = 'none'; a.style.visibility = 'hidden'; document.body.appendChild(a); if ('loading' !== document.readyState) c(); else if (window.addEventListener) document.addEventListener('DOMContentLoaded', c); else { var e = document.onreadystatechange || function () { }; document.onreadystatechange = function (b) { e(b); 'loading' !== document.readyState && (document.onreadystatechange = e, c()) } } } })();</script>
 </body>
 
 </html>

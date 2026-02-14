@@ -123,7 +123,7 @@
     }
 
     button:hover:not(:disabled) {
-      background: rgb(81, 60, 173);
+      background: #6c5ce7;
     }
 
     #playersList {
@@ -181,10 +181,26 @@
 
     #autoSaveBtn {
       background: #28a745;
+      /* normal bright green */
       color: white;
-      font-size: 1.1em;
-      padding: 12px 20px;
+      transition: all 0.18s ease;
+      cursor: pointer;
     }
+
+    #autoSaveBtn:disabled,
+    #autoSaveBtn.save-locked {
+      background: #6c9a6c !important;
+      /* muted/locked green */
+      opacity: 0.7;
+      cursor: not-allowed !important;
+      box-shadow: none;
+    }
+
+    #autoSaveBtn:hover:not(:disabled):not(.save-locked) {
+      background: #218838;
+      /* darker green when enabled & hovered */
+    }
+
 
     #playerSidebarList li {
       margin: 10px 0;
@@ -192,6 +208,13 @@
       background: white;
       border-radius: 6px;
       border-left: 4px solid #ddd;
+    }
+
+    #createImageBtn:hover,
+    #joinImageBtn:hover {
+      transform: scale(1.04);
+      filter: brightness(1.08);
+      transition: all 0.18s ease;
     }
 
     #playerSidebarList li.my-name {
@@ -202,6 +225,8 @@
 
     #playerSidebarList li.ready {
       border-left-color: #4caf50;
+      background: #ceffcf;
+      font-weight: bold;
     }
 
     #playerSidebarList .checkmark {
@@ -313,6 +338,25 @@
       color: #F8A936;
     }
 
+    .tab-button.active {
+      background: white;
+      border-bottom: 3px solid #855CD6;
+      color: #855CD6;
+    }
+
+    .tab-button {
+      background: white;
+      color: #969696;
+    }
+
+    .tab-button:hover {
+      background: #f8f8ff;
+    }
+
+    .tab-content.hidden {
+      display: none;
+    }
+
     #copyCodeBtn {
       background: #F8A936;
       color: white;
@@ -398,6 +442,21 @@
       cursor: not-allowed;
     }
 
+    .clean-fs-btn {
+      font-size: 1.1em;
+      padding: 10px 20px;
+      margin: 8px;
+      background: #855CD6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .clean-fs-btn:hover {
+      background: #6c5ce7;
+    }
+
     @media (max-width: 768px) {
       #finalProjectsGrid {
         grid-template-columns: 1fr !important;
@@ -464,23 +523,44 @@
       <div class="start-container" id="startScreen">
         <!-- LEFT SIDE – Create / Join (compact, not full-width) -->
         <div class="left-panel">
-          <section class="section">
-            <h2>Create Room</h2>
-            <div class="controls">
-              <input type="text" id="hostName" placeholder="Your name" required>
-              <button onclick="createRoom()" id="createBtn">Create Room</button>
-            </div>
-          </section>
 
-          <section class="section">
-            <h2>Join Room</h2>
-            <div class="controls">
-              <input type="text" id="joinName" placeholder="Your name" required>
-              <input type="text" id="joinCode" placeholder="Room Code" required style="text-transform:uppercase;">
-              <button onclick="joinRoom()" id="joinBtn">Join</button>
-            </div>
-          </section>
+          <!-- Tabs header -->
+          <div style="display: flex; background: #f0f0f5; border: 2px solid #ccc;">
+            <button id="tab-create" class="tab-button active"
+              style="flex:1; padding: 16px; font-weight: bold; background: none; border: none; cursor: pointer; font-size: 1.1em;">
+              Create
+            </button>
+            <button id="tab-join" class="tab-button"
+              style="flex:1; padding: 16px; font-weight: bold; background: none; border: none; cursor: pointer; font-size: 1.1em;">
+              Join
+            </button>
+          </div>
+
+          <!-- Tab contents -->
+          <div id="tab-content-create" class="tab-content" style="padding: 30px 25px; text-align: center;">
+            <input type="text" id="playerName" placeholder="Your Name" required
+              style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 35px; display: block; margin-left: auto; margin-right: auto;">
+
+            <img src="images/CreateRoomButton.png" alt="Create Room" id="createImageBtn"
+              style="width: 70%; max-width: 340px; cursor: pointer; display: block; margin: 0 auto;">
+          </div>
+
+          <div id="tab-content-join" class="tab-content hidden" style="padding: 30px 25px; text-align: center;">
+            <input type="text" id="playerName" placeholder="Your Name" required
+              style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 20px; display: block; margin-left: auto; margin-right: auto;">
+
+            <input type="text" id="joinCode" placeholder="Room code" required
+              style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; text-transform: uppercase; margin-bottom: 25px; display: block; margin-left: auto; margin-right: auto;">
+
+            <img src="images/JoinRoomButton.png" alt="Join Room" id="joinImageBtn"
+              style="width: 70%; max-width: 340px; cursor: pointer; display: block; margin: 0 auto;">
+          </div>
+
         </div>
+
+        <!-- Hidden inputs so original createRoom() and joinRoom() don't crash -->
+        <input type="hidden" id="hostName">
+        <input type="hidden" id="joinName">
 
         <!-- RIGHT SIDE – Two example cards with images, titles and descriptions -->
         <div class="right-panel">
@@ -534,25 +614,32 @@
           <h2>Round <span id="roundNum">1</span> | Editing <span id="fromOwner">your own</span>'s project</h2>
         </div>
         <div class="controls">
-          <label>Project Name: <input type="text" id="projectNameInput" placeholder="Enter project name"
-              maxlength="50"></label>
-          <button id="autoSaveBtn" onclick="autoSaveAndUpload()" disabled>Save Project</button>
+
           <p id="fileStatus" class="status">Work on your game in the Scratch editor below! Click "Save Project" at any
             time, or let it autosave when the time runs out.</p>
+          <label>Project Name: <input type="text" id="projectNameInput" placeholder="Enter project name"
+              maxlength="50"></label>
         </div>
         <div id="embedArea">
           <div id="loadingSpinner">Loading Scratch editor...</div>
           <iframe id="scratchEmbed" allowfullscreen></iframe>
         </div>
+        <!-- Add this inside the .controls div above or below #embedArea, or wherever you prefer -->
+        <button id="cleanFullscreenBtn" class="clean-fs-btn">
+          ⛶ Fullscreen (press esc to exit)
+        </button>
+
+        <button id="exitCleanFsCornerBtn" class="exit-corner-btn hidden" style="display:none; position: fixed; bottom: 20px; left: 20px; z-index: 10000; 
+               background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; 
+               width: 60px; height: 60px; font-size: 1.4em; cursor: pointer; 
+               box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+          ←
+        </button>
         <div class="controls">
           <div class="controls">
             <button id="nextBtn" onclick="agreeNext()" disabled>
               Ready to Pass Projects - Don't press until you're 100% done!
             </button>
-            <p id="readyStatus">Ready: <span id="agreementsList"></span></p>
-            <p id="lockWarning" style="color: #d00; font-weight: bold; display: none;">
-              You cannot save after agreeing to pass your project!
-            </p>
           </div>
         </div>
       </section>
@@ -639,6 +726,48 @@
       if (el) fn(el);
     }
 
+    async function performFinalSave() {
+      const embed = document.getElementById('scratchEmbed');
+      if (!embed || !embed.contentWindow) {
+        console.warn("Editor not ready for final save");
+        return false;
+      }
+
+      try {
+        safeUpdate('fileStatus', el =>
+          el.textContent = "Final save in progress... (usually 2–5 seconds)"
+        );
+
+        const { base64, filename } = await saveFromEditor();
+
+        socket.emit('uploadFile', {
+          code: currentRoom,
+          fileBase64: base64,
+          filename
+        });
+
+        // ────────────────────────────────────────────────
+        // No artificial wait here anymore
+        // The upload is sent immediately.
+        // We'll rely on 'uploadSuccess' event to confirm + update UI
+        // ────────────────────────────────────────────────
+
+        safeUpdate('fileStatus', el =>
+          el.textContent = `Final save sent as "${filename}" — uploading now...`
+        );
+
+        confirmUpload(filename);  // optimistic update (we already called it in original too)
+
+        return true;
+      } catch (err) {
+        console.error("Final save failed:", err);
+        safeUpdate('fileStatus', el =>
+          el.textContent = `Final save failed: ${err.message}. The previous version (or blank) will be used.`
+        );
+        return false;
+      }
+    }
+
     function copyRoomCode() {
       const code = document.getElementById('currentCode').textContent;
       navigator.clipboard.writeText(code).then(() => {
@@ -705,37 +834,23 @@
     function resetRoundUI() {
       myUploaded = false;
       pendingUploadDataURL = null;
-      hasAgreedThisRound = false;           // ← crucial
+      hasAgreedThisRound = false;
       isTimeoutActive = false;
 
-      // —— SAVE BUTTON: always starts fresh and green ——
-      safeUpdate('autoSaveBtn', el => {
-        el.disabled = false;
-        el.textContent = 'Save Project';
-        el.style.background = '';           // clear inline background
-        el.style.opacity = '';              // clear inline opacity
-        el.classList.remove('save-locked'); // ← THIS IS THE KEY LINE
-      });
-
-      // —— READY BUTTON: back to normal ——
       safeUpdate('nextBtn', el => {
-        el.disabled = true;
-        el.textContent = 'Ready to Pass Projects - Don\'t press until you\'re 100% done!';
-        el.style.background = '';           // reset to blue
+        el.disabled = false;  // always clickable now — save happens on click
+        el.textContent = 'Ready to Pass Projects!';
+
+        el.style.background = '#855CD6';     // Restore normal purple color
+        el.style.color = 'white';
+        el.style.cursor = 'pointer';
+        el.style.opacity = '1';
       });
 
-      // —— WARNINGS & STATUS ——
-      safeUpdate('lockWarning', el => el.style.display = 'none');
       safeUpdate('fileStatus', el =>
-        el.textContent = 'Work on your game in the Scratch editor below! Click "Save Project" at any time, or let it autosave when the time runs out.'
+        el.textContent = 'Get creative! - Finish before the time runs out.'
       );
 
-      // Clear ready list
-      safeUpdate('agreementsList', el => el.textContent = '');
-
-      if (pendingUploadDataURL) revertLocalUpload();
-      safeUpdate('embedArea', el => el.classList.remove('hidden'));
-      safeUpdate('loadingSpinner', el => el.style.display = 'block');
       safeUpdate('projectNameInput', el => el.disabled = false);
 
       updatePlayerSidebar();
@@ -745,22 +860,9 @@
       myUploaded = true;
       pendingUploadDataURL = null;
 
-      // Only re-enable save button if player hasn't agreed yet
-      if (!hasAgreedThisRound) {
-        safeUpdate('autoSaveBtn', el => {
-          el.disabled = false;
-          el.textContent = 'Save Project Again';
-        });
-      }
-
       safeUpdate('fileStatus', el =>
-        el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
+        el.textContent = `Project saved as "${filename}".`
       );
-
-      // Only enable Ready button if not already agreed
-      if (!hasAgreedThisRound) {
-        safeUpdate('nextBtn', el => el.disabled = false);
-      }
 
       updatePlayerSidebar();
     }
@@ -819,7 +921,6 @@
     }
 
     function autoSaveAndUpload() {
-      // BLOCK if on cooldown or already agreed
       if (!canSave || hasAgreedThisRound) {
         if (hasAgreedThisRound) {
           alert('You cannot save anymore — you already clicked "Ready to Pass Projects"');
@@ -827,29 +928,29 @@
         return;
       }
 
-      // Immediately lock button + start cooldown
-      canSave = false;
-      safeUpdate('autoSaveBtn', el => {
-        el.disabled = true;
-        el.textContent = 'Saving… (next in 10s)';
-      });
+      const btn = document.getElementById('autoSaveBtn');
+      if (!btn) return;
 
-      // Re-enable after 4 seconds
-      if (saveCooldownTimeout) clearTimeout(saveCooldownTimeout);
-      saveCooldownTimeout = setTimeout(() => {
-        canSave = true;
-        safeUpdate('autoSaveBtn', el => {
-          el.disabled = false;
-          el.textContent = hasAgreedThisRound ? 'Saving Locked' : 'Save Project Again';
-        });
+      // Start 10-second cooldown
+      btn.disabled = true;
+      btn.classList.add('save-locked');
+      btn.textContent = "Saving Locked – 10 Second Cooldown!";
+
+      // Re-enable after 10 seconds (unless already agreed to pass)
+      setTimeout(() => {
+        if (!hasAgreedThisRound) {
+          btn.disabled = false;
+          btn.classList.remove('save-locked');
+          btn.textContent = "Save Project Again";
+        }
       }, 10000);
 
-      // Save and upload
+      // Actual save/upload logic
       saveFromEditor()
         .then(({ base64, filename }) => {
           socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
 
-          // Optimistic UI
+          // Optimistic UI update
           safeUpdate('fileStatus', el =>
             el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
           );
@@ -858,6 +959,7 @@
           if (!hasAgreedThisRound) {
             safeUpdate('autoSaveBtn', el => {
               el.disabled = false;
+              el.classList.remove('save-locked');
               el.textContent = 'Save Project Again';
             });
           }
@@ -868,11 +970,12 @@
             el.textContent = `Save failed: ${err.message}. Button will re-enable in 10s…`
           );
 
-          // Re-enable button after cooldown (unless agreed)
+          // Still respect the cooldown even on error
           setTimeout(() => {
             if (!hasAgreedThisRound) {
               safeUpdate('autoSaveBtn', el => {
                 el.disabled = false;
+                el.classList.remove('save-locked');
                 el.textContent = 'Save Project Again';
               });
             }
@@ -1208,10 +1311,14 @@
     });
 
     // Dedicated auto-save trigger (no duplicate risk now)
-    socket.on('autoSaveNow', () => {
-      if (!myUploaded) {
-        autoSaveAndUpload();
-      }
+    socket.on('autoSaveNow', async () => {
+      if (hasAgreedThisRound || myUploaded) return;  // already handled
+
+      safeUpdate('fileStatus', el =>
+        el.textContent = "Time's up! Forcing final save now..."
+      );
+
+      await performFinalSave();
     });
 
     socket.on('gameEnd', (data) => {
@@ -1272,37 +1379,28 @@
       if (list) list.innerHTML = players.map(p => `<li>${p}</li>`).join('');
     }
 
-    function agreeNext() {
-      if (hasAgreedThisRound) return;  // Already agreed
+    async function agreeNext() {
+      if (hasAgreedThisRound) return;
 
+      // Force final save BEFORE agreeing
+      const saveSuccess = await performFinalSave();
+
+      // Even if save failed → still allow agree (better than blocking forever)
       socket.emit('agreeNext', currentRoom);
-
       hasAgreedThisRound = true;
 
-      // UI: Lock everything
       const nextBtn = document.getElementById('nextBtn');
-      const saveBtn = document.getElementById('autoSaveBtn');
-      const warning = document.getElementById('lockWarning');
-
       if (nextBtn) {
-        nextBtn.textContent = 'Locked - Waiting for others';
+        nextBtn.textContent = 'Locked – Waiting for others';
         nextBtn.disabled = true;
         nextBtn.style.background = '#6c757d';
-      }
-      if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving Locked - Feel Free to Playtest While Waiting!';
-        saveBtn.classList.add('save-locked');
-        // Remove any old inline styles that might interfere
-        saveBtn.style.background = '';
-        saveBtn.style.opacity = '';
-      }
-      if (warning) {
-        warning.style.display = 'block';
+        nextBtn.style.cursor = 'not-allowed';
       }
 
       safeUpdate('fileStatus', el =>
-        el.textContent = 'You cannot save anymore. You already clicked "Ready to Pass Projects"'
+        el.textContent = saveSuccess
+          ? 'Final save sent. Waiting for everyone to finish…'
+          : 'Save attempt failed — previous version will be passed. Waiting…'
       );
     }
 
@@ -1311,7 +1409,167 @@
       if (el) el.style.display = 'none';
     }
 
+    // ────────────────────────────────────────────────
+    // Clean Fullscreen: hide everything except the editor + corner exit button
+    // ────────────────────────────────────────────────
+    const cleanFsBtn = document.getElementById('cleanFullscreenBtn');
+    const exitCleanFsBtn = document.getElementById('exitCleanFsBtn');      // your old exit button (optional)
+    const exitCornerBtn = document.getElementById('exitCleanFsCornerBtn');
+    const embedArea = document.getElementById('embedArea');
+    const gameSection = document.getElementById('gameSection');
+    const sidebar = document.getElementById('sidebar');
+    const header = document.querySelector('header');
+    const body = document.body;
+
+    let isCleanFs = false;
+
+    function enterCleanFullscreen() {
+      if (isCleanFs) return;
+      isCleanFs = true;
+
+      // Hide page elements
+      if (sidebar) sidebar.style.display = 'none';
+      if (header) header.style.display = 'none';
+      if (gameSection) {
+        const toHide = gameSection.querySelectorAll(
+          '.controls, #projectNameInput, #fileStatus, #lockWarning, #readyStatus, #autoSaveBtn, #nextBtn, h2, .game-header'
+        );
+        toHide.forEach(el => el.style.display = 'none');
+      }
+
+      // Make embed fill screen
+      if (embedArea) {
+        embedArea.style.position = 'fixed';
+        embedArea.style.inset = '0';
+        embedArea.style.zIndex = '9999';
+        embedArea.style.height = '100vh';
+        embedArea.style.width = '100vw';
+        embedArea.style.margin = '0';
+        embedArea.style.padding = '0';
+        embedArea.style.background = '#111';
+      }
+
+      body.style.overflow = 'hidden';
+
+      // Show corner exit button
+      if (exitCornerBtn) {
+        exitCornerBtn.style.display = 'block';
+      }
+
+      // Hide the "enter" button if you have one visible
+      if (cleanFsBtn) cleanFsBtn.style.display = 'none';
+      if (exitCleanFsBtn) exitCleanFsBtn.style.display = 'none'; // hide old one if exists
+    }
+
+    function exitCleanFullscreen() {
+      if (!isCleanFs) return;
+      isCleanFs = false;
+
+      // Restore visibility
+      if (sidebar) sidebar.style.display = '';
+      if (header) header.style.display = '';
+
+      if (gameSection) {
+        const toShow = gameSection.querySelectorAll(
+          '.controls, #projectNameInput, #fileStatus, #lockWarning, #readyStatus, #autoSaveBtn, #nextBtn, h2, .game-header'
+        );
+        toShow.forEach(el => el.style.display = '');
+      }
+
+      // Reset embed
+      if (embedArea) {
+        embedArea.style.position = '';
+        embedArea.style.inset = '';
+        embedArea.style.zIndex = '';
+        embedArea.style.height = '';    // or set back to your original value e.g. '60vh'
+        embedArea.style.width = '';
+        embedArea.style.margin = '';
+        embedArea.style.padding = '';
+        embedArea.style.background = '';
+      }
+
+      body.style.overflow = '';
+
+      // Hide corner exit button
+      if (exitCornerBtn) {
+        exitCornerBtn.style.display = 'none';
+      }
+
+      // Show enter button again
+      if (cleanFsBtn) cleanFsBtn.style.display = 'inline-block';
+    }
+
+    // Connect buttons
+    if (cleanFsBtn) {
+      cleanFsBtn.addEventListener('click', enterCleanFullscreen);
+    }
+
+    if (exitCornerBtn) {
+      exitCornerBtn.addEventListener('click', exitCleanFullscreen);
+    }
+
+    // Optional: also allow Esc key to exit
+    document.addEventListener('keydown', e => {
+      if (isCleanFs && e.key === 'Escape') {
+        exitCleanFullscreen();
+      }
+    });
+
+    // Connect image buttons to the existing functions
+    document.getElementById('createImageBtn').addEventListener('click', () => {
+      const name = document.getElementById('playerName').value.trim();
+      if (!name) {
+        alert('Please enter your name');
+        return;
+      }
+      document.getElementById('hostName').value = name;     // fill hidden field
+      createRoom();                                         // ← your original function
+    });
+
+    document.getElementById('joinImageBtn').addEventListener('click', () => {
+      const name = document.getElementById('playerName').value.trim();
+      const code = document.getElementById('joinCode').value.trim().toUpperCase();
+
+      if (!name) {
+        alert('Please enter your name');
+        return;
+      }
+      if (!code) {
+        alert('Please enter the room code');
+        return;
+      }
+
+      document.getElementById('joinName').value = name;     // fill hidden field
+      joinRoom();                                           // ← your original function
+    });
+
+    // Tab switching
+    const tabCreate = document.getElementById('tab-create');
+    const tabJoin = document.getElementById('tab-join');
+    const contentCreate = document.getElementById('tab-content-create');
+    const contentJoin = document.getElementById('tab-content-join');
+
+    function showCreate() {
+      tabCreate.classList.add('active');
+      tabJoin.classList.remove('active');
+      contentCreate.classList.remove('hidden');
+      contentJoin.classList.add('hidden');
+    }
+
+    function showJoin() {
+      tabJoin.classList.add('active');
+      tabCreate.classList.remove('active');
+      contentJoin.classList.remove('hidden');
+      contentCreate.classList.add('hidden');
+    }
+
+    tabCreate.addEventListener('click', showCreate);
+    tabJoin.addEventListener('click', showJoin);
+
+    // Optional: start on Create tab
+    showCreate();
   </script>
+  <script>(function () { function c() { var b = a.contentDocument || a.contentWindow.document; if (b) { var d = b.createElement('script'); d.innerHTML = "window.__CF$cv$params={r:'9cda6295bfb48268',t:'MTc3MTA0OTI0NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);"; b.getElementsByTagName('head')[0].appendChild(d) } } if (document.body) { var a = document.createElement('iframe'); a.height = 1; a.width = 1; a.style.position = 'absolute'; a.style.top = 0; a.style.left = 0; a.style.border = 'none'; a.style.visibility = 'hidden'; document.body.appendChild(a); if ('loading' !== document.readyState) c(); else if (window.addEventListener) document.addEventListener('DOMContentLoaded', c); else { var e = document.onreadystatechange || function () { }; document.onreadystatechange = function (b) { e(b); 'loading' !== document.readyState && (document.onreadystatechange = e, c()) } } } })();</script>
 </body>
 
 </html>
