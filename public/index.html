@@ -716,6 +716,16 @@
     let isTimeoutActive = false;  // New: Flag to track if timeout grace is ongoing (for error suppression)
     let hasAgreedThisRound = false;  // NEW: Once true, cannot save again
 
+    // Listen for Escape forwarded from inside the iframe
+    window.addEventListener('message', function (event) {
+      // Only accept messages from our own site
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data && event.data.type === 'escapePressed' && isCleanFs) {
+        exitCleanFullscreen();
+      }
+    });
+
     // Socket.IO error handling (warn only)
     socket.on('connect_error', (err) => console.warn('Connection error:', err.message));
     socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
@@ -1193,10 +1203,43 @@
         embed.onload = () => {
           safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
+          // Your existing project name code
           const tw = embed.contentWindow;
           if (tw && tw.vm && data.projects[myIndex].filename) {
-            const cleanName = data.projects[myIndex].filename.replace('.sb3', '');
+            const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
             tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+          }
+
+          // ────────────────────────────────────────────────
+          // NEW: Inject Escape key forwarder into the iframe
+          // ────────────────────────────────────────────────
+          try {
+            const iframeWin = embed.contentWindow;
+            const iframeDoc = embed.contentDocument || iframeWin?.document;
+
+            if (iframeDoc && iframeWin) {
+              const handleEsc = function (e) {
+                if (e.key === 'Escape' || e.key === 'Esc') {
+                  // Forward to parent
+                  window.parent.postMessage(
+                    { type: 'escapePressed' },
+                    window.location.origin
+                  );
+                  // Optional: uncomment to also block browser fullscreen exit
+                  // e.preventDefault();
+                  // e.stopPropagation();
+                }
+              };
+
+              // Attach to document (main place most key events go)
+              iframeDoc.addEventListener('keydown', handleEsc, true); // true = capture phase
+
+              // Also attach directly to window as extra safety
+              iframeWin.addEventListener('keydown', handleEsc, true);
+            }
+          } catch (err) {
+            console.warn("Could not add Esc listener inside iframe:", err);
+            // The corner exit button is still there as backup
           }
         };
       }
@@ -1233,10 +1276,43 @@
         embed.onload = () => {
           safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
+          // Your existing project name code
           const tw = embed.contentWindow;
           if (tw && tw.vm && data.projects[myIndex].filename) {
-            const cleanName = data.projects[myIndex].filename.replace('.sb3', '');
+            const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
             tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+          }
+
+          // ────────────────────────────────────────────────
+          // NEW: Inject Escape key forwarder into the iframe
+          // ────────────────────────────────────────────────
+          try {
+            const iframeWin = embed.contentWindow;
+            const iframeDoc = embed.contentDocument || iframeWin?.document;
+
+            if (iframeDoc && iframeWin) {
+              const handleEsc = function (e) {
+                if (e.key === 'Escape' || e.key === 'Esc') {
+                  // Forward to parent
+                  window.parent.postMessage(
+                    { type: 'escapePressed' },
+                    window.location.origin
+                  );
+                  // Optional: uncomment to also block browser fullscreen exit
+                  // e.preventDefault();
+                  // e.stopPropagation();
+                }
+              };
+
+              // Attach to document (main place most key events go)
+              iframeDoc.addEventListener('keydown', handleEsc, true); // true = capture phase
+
+              // Also attach directly to window as extra safety
+              iframeWin.addEventListener('keydown', handleEsc, true);
+            }
+          } catch (err) {
+            console.warn("Could not add Esc listener inside iframe:", err);
+            // The corner exit button is still there as backup
           }
         };
       }
@@ -1343,6 +1419,13 @@
     });
 
     socket.on('roundEnding', startRoundCountdown);
+
+    socket.on('roundEnding', () => {
+      if (isCleanFs) {
+        exitCleanFullscreen();
+      }
+      startRoundCountdown();  // ← call your existing function
+    });
 
     function createRoom() {
       const name = document.getElementById('hostName').value.trim();
@@ -1568,6 +1651,18 @@
 
     // Optional: start on Create tab
     showCreate();
+
+    // Sync the two playerName fields whenever one changes
+    const nameInputs = document.querySelectorAll('#tab-content-create #playerName, #tab-content-join #playerName');
+
+    nameInputs.forEach(input => {
+      input.addEventListener('input', () => {
+        const value = input.value.trim();
+        nameInputs.forEach(other => {
+          if (other !== input) other.value = value;
+        });
+      });
+    });
   </script>
   <script>(function () { function c() { var b = a.contentDocument || a.contentWindow.document; if (b) { var d = b.createElement('script'); d.innerHTML = "window.__CF$cv$params={r:'9cda6295bfb48268',t:'MTc3MTA0OTI0NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);"; b.getElementsByTagName('head')[0].appendChild(d) } } if (document.body) { var a = document.createElement('iframe'); a.height = 1; a.width = 1; a.style.position = 'absolute'; a.style.top = 0; a.style.left = 0; a.style.border = 'none'; a.style.visibility = 'hidden'; document.body.appendChild(a); if ('loading' !== document.readyState) c(); else if (window.addEventListener) document.addEventListener('DOMContentLoaded', c); else { var e = document.onreadystatechange || function () { }; document.onreadystatechange = function (b) { e(b); 'loading' !== document.readyState && (document.onreadystatechange = e, c()) } } } })();</script>
 </body>
