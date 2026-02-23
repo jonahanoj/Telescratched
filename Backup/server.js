@@ -10,8 +10,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { 
-    origin: "*", 
+  cors: {
+    origin: "*",
     methods: ["GET", "POST"]
   },
   maxHttpBufferSize: 10e6,   // 10MB for .sb3 uploads
@@ -95,12 +95,14 @@ app.get('/final-embed/:code/:index', (req, res) => {
 });
 
 // Route: Custom addon JS for auto-save/lock + fixes
+// Route: Custom addon JS for auto-save/lock + fixes
 app.get('/addon.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
     export default async function ({ vm, renderer }) {
       window.addEventListener('message', async (e) => {
         if (e.origin !== window.parent.location.origin) return;
+
         if (e.data.type === 'saveAndUpload') {
           try {
             const blob = await vm.saveProjectSb3();
@@ -113,24 +115,23 @@ app.get('/addon.js', (req, res) => {
                 base64: base64,
                 filename: vm.runtime.projectName || 'project.sb3'
               }, e.origin);
-              // Clear dirty state and disable beforeunload after save
-              vm.runtime.emit('projectChanged', false);  // Reset 'dirty' flag
+              vm.runtime.emit('projectChanged', false);
               window.onbeforeunload = null;
-              console.log('Project saved and cleaned up');
             };
           } catch (err) {
             e.source.postMessage({ type: 'saveError', error: err.message }, e.origin);
           }
         } else if (e.data.type === 'lockEditor') {
-          vm.pause();  // Pause VM to lock editing
-          console.log('Editor locked on timeout');
+          vm.pause();
+          console.log('Editor locked');
+        } else if (e.data.type === 'unlockEditor') {
+          vm.resume();   // ← THIS WAS MISSING
+          console.log('Editor unlocked');
         } else if (e.data.type === 'setProjectName') {
-          // Set internal project name from parent
           vm.runtime.projectName = e.data.name;
-          console.log('Project name set to:', e.data.name);
         }
       });
-      console.log('Auto-save & lock addon loaded');
+      console.log('Telescratched addon loaded');
     }
   `);
 });
@@ -223,14 +224,20 @@ function advanceRound(room, code) {
 
 io.on('connection', (socket) => {
   socket.on('createRoom', ({ name }) => {
+    name = (name || '').trim();
+    if (name.length < 1 || name.length > 16) {
+      return socket.emit('error', 'Name must be a max of 16 characters long.');
+    }
+
     let code;
     do {
       code = generateRoomCode();
     } while (rooms.has(code));
+
     const defaultSettings = {
       cycles: 1,
       timer: 5 * 60 * 1000,
-      maxPlayers: 4
+      maxPlayers: 4   // still defaults to 4, but can go up to 10
     };
     rooms.set(code, {
       players: [{ id: socket.id, name }],
@@ -244,6 +251,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('joinRoom', ({ code, name }) => {
+    name = (name || '').trim();
+    if (name.length < 1 || name.length > 16) {
+      return socket.emit('error', 'Name must be a max of 16 characters long.');
+    }
+
     const roomCode = code.toUpperCase();
     const room = rooms.get(roomCode);
     if (!room) return socket.emit('error', 'Room not found.');
@@ -260,23 +272,27 @@ io.on('connection', (socket) => {
       confirmed: room.settingsConfirmed,
       started: room.started
     });
-    io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));  // Broadcast to all, including host
+    io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
   });
 
   socket.on('setSettings', ({ code, settings }) => {
     const room = rooms.get(code);
     if (!room || room.players[0]?.id !== socket.id) return;
+
     const newSettings = {
       ...settings,
-      maxPlayers: parseInt(settings.maxPlayers) || 4,
-      timer: parseInt(settings.timer) * 60 * 1000 || 300000,
-      cycles: parseInt(settings.cycles) || 1
+      maxPlayers: Math.min(10, parseInt(settings.maxPlayers) || 4),
+      timer: Math.min(120 * 60 * 1000, parseInt(settings.timer) * 60 * 1000 || 300000),  // max 120 min
+      cycles: Math.min(10, parseInt(settings.cycles) || 1)   // max 10 cycles
     };
-    if (newSettings.cycles < 1 || newSettings.timer < 60000) return socket.emit('error', 'Invalid settings.');
+
+    if (newSettings.cycles < 1 || newSettings.timer < 60000) {
+      return socket.emit('error', 'Invalid settings.');
+    }
+
     room.settings = newSettings;
     room.settingsConfirmed = true;
     io.to(code).emit('settingsUpdated', { settings: room.settings, confirmed: true });
-    // Re-broadcast player list after settings (in case of race)
     io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
   });
 
@@ -304,7 +320,6 @@ io.on('connection', (socket) => {
 
     // Optional: Still prevent upload after they've agreed
     const playerAgreed = room.agreements.has(socket.id);
-    if (playerAgreed) return socket.emit('error', 'You already agreed to pass — no more saves allowed!');
 
     try {
       const buffer = Buffer.from(fileBase64, 'base64');
@@ -319,30 +334,54 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('agreeNext', (code) => {
+  // ====================== READY / UN-READY HANDLING ======================
+  socket.on('agreeNext', (code) => handleReadyChange(code, true));
+  socket.on('unagreeNext', (code) => handleReadyChange(code, false));
+
+  function handleReadyChange(code, becomingReady) {
     const room = rooms.get(code);
-    if (!room || !room.started || room.agreements.has(socket.id)) return socket.emit('error', 'Already agreed.');
-    const index = room.players.findIndex(p => p.id === socket.id);
-    if (!room.uploaded[index]) return socket.emit('error', 'Must upload first.');
+    if (!room || !room.started || !room.roundActive) return;
 
-    room.agreements.add(socket.id);
-    io.to(code).emit('agreementUpdate', Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || ''));
+    const playerId = socket.id;
+    if (becomingReady) {
+      if (room.agreements.has(playerId)) return;           // already ready
+      room.agreements.add(playerId);
+    } else {
+      room.agreements.delete(playerId);                    // un-ready
+    }
 
-    if (room.agreements.size === room.players.length) {
-      // Start 5s countdown before advance
+    // Broadcast updated list so everyone sees checkmarks change
+    const names = Array.from(room.agreements)
+      .map(id => room.players.find(p => p.id === id)?.name || '')
+      .filter(Boolean);
+    io.to(code).emit('agreementUpdate', names);
+
+    // Only start grace period if EVERYONE is now ready
+    if (becomingReady && room.agreements.size === room.players.length) {
       io.to(code).emit('roundEnding');
       setTimeout(() => advanceRound(room, code), 10000);
     }
-  });
+  }
 
   socket.on('disconnect', () => {
-    for (const [c, r] of rooms.entries()) {
-      if (r.roundTimer) clearTimeout(r.roundTimer);
-      const idx = r.players.findIndex(p => p.id === socket.id);
+    for (const [code, room] of rooms.entries()) {
+      if (room.roundTimer) {
+        clearTimeout(room.roundTimer);
+        room.roundTimer = null;
+      }
+
+      const idx = room.players.findIndex(p => p.id === socket.id);
       if (idx > -1) {
-        r.players.splice(idx, 1);
-        io.to(c).emit('playerListUpdate', r.players.map(p => p.name));
-        if (r.players.length === 0) rooms.delete(c);
+        room.players.splice(idx, 1);
+        io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
+
+        // === ONLY delete empty lobbies that never started ===
+        // Once the game has ended, keep the room (and all final projects)
+        // for the full 10 minutes even if everyone leaves.
+        if (room.players.length === 0 && !room.ended) {
+          rooms.delete(code);
+          console.log(`Room ${code} deleted (empty lobby)`);
+        }
       }
     }
   });
