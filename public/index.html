@@ -914,18 +914,35 @@
     socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
 
     // === RELIABILITY: Auto-rejoin on hiccups ===
+    // === RELIABILITY: Smart Auto-Rejoin (fixes all random errors) ===
+    let lastRejoinAttempt = 0;
+
+    function attemptSmartRejoin() {
+      const now = Date.now();
+      if (now - lastRejoinAttempt < 1800) return;   // debounce
+      lastRejoinAttempt = now;
+
+      if (!currentRoom || !myName) return;
+
+      // Only try rejoin if the user is actually looking at the game or waiting room
+      const gameVisible = !document.getElementById('gameSection').classList.contains('hidden');
+      const waitingVisible = !document.getElementById('waitingSection').classList.contains('hidden');
+      const isInSession = gameVisible || waitingVisible;
+
+      if (isInSession) {
+        console.log(`🔄 Smart rejoin for ${myName} in ${currentRoom}`);
+        socket.emit('rejoinRoom', { code: currentRoom, name: myName });
+      }
+    }
+
     socket.on('connect', () => {
       console.log('✅ Socket (re)connected');
-      if (currentRoom && myName) {
-        setTimeout(() => {  // tiny delay so socket is fully ready
-          socket.emit('rejoinRoom', { code: currentRoom, name: myName });
-        }, 800);
-      }
+      attemptSmartRejoin();
     });
 
     socket.on('reconnect', () => {
-      console.log('✅ Reconnected — attempting rejoin');
-      if (currentRoom && myName) socket.emit('rejoinRoom', { code: currentRoom, name: myName });
+      console.log('✅ Socket reconnected');
+      attemptSmartRejoin();
     });
 
     // Safe DOM update
@@ -1606,16 +1623,26 @@
     });
 
     socket.on('rejoinedGame', (data) => {
-      console.log('✅ Rejoined game successfully');
+      console.log('✅ Successfully rejoined game');
 
       players = data.players;
       myIndex = data.myIndex;
       lockedMyIndex = myIndex;
-      agreements = data.agreements || agreements;
+      agreements = data.agreements || [];
+      gameSettings = data.settings || gameSettings;   // safety
 
-      // Restore UI exactly like roundAdvanced
-      safeUpdate('roundNum', el => el.textContent = data.round);
-      safeUpdate('roundNumSidebar', el => el.textContent = data.round);
+      // === FORCE CORRECT UI (fixes "Reset non-host stuff") ===
+      document.getElementById('startScreen').style.display = 'none';
+      document.getElementById('waitingSection').classList.add('hidden');
+      document.getElementById('settingsSection').classList.add('hidden');
+      document.getElementById('gameEndSection').classList.add('hidden');
+      document.getElementById('gameSection').classList.remove('hidden');
+      document.getElementById('sidebar').classList.add('visible');
+      document.querySelector('header').classList.add('hidden');
+
+      // Restore round & owner info
+      safeUpdate('roundNum', el => el.textContent = data.round || 1);
+      safeUpdate('roundNumSidebar', el => el.textContent = data.round || 1);
       safeUpdate('fromOwner', el => el.textContent = data.owners ? data.owners[myIndex] : 'your project');
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
 
@@ -1624,14 +1651,15 @@
       updatePlayerSidebar();
       resetRoundUI();
 
-      // Restore ready/pass button state
+      // Restore Pass Project button state
       currentReadyState = !!data.currentReadyState;
       hasAgreedThisRound = currentReadyState;
       updateReadyButton();
-      const overlay = document.getElementById('editorOverlay');
-      overlay.classList.toggle('show', currentReadyState);
 
-      // Reload editor with the correct project (this fixes the "I'm in the game but editor wrong" feeling)
+      const overlay = document.getElementById('editorOverlay');
+      if (overlay) overlay.classList.toggle('show', currentReadyState);
+
+      // Reload the exact editor you should be editing
       const embed = document.getElementById('scratchEmbed');
       if (embed) {
         const origin = window.location.origin;
@@ -1639,9 +1667,7 @@
         embed.src = newUrl;
       }
 
-      // Make sure game UI is visible
-      document.getElementById('gameSection').classList.remove('hidden');
-      document.getElementById('sidebar').classList.add('visible');
+      updateStartBtn();
     });
 
     // Updated: Suppress more errors during timeout grace (now includes "Already uploaded")
@@ -2012,8 +2038,8 @@
 
     function toggleReady() {
       const now = Date.now();
-      if (now - (window.lastReadyToggle || 0) < 800) return; // debounce
-      window.lastReadyToggle = now;
+      if (now - (window.lastReadyClick || 0) < 600) return;
+      window.lastReadyClick = now;
 
       setReady(!currentReadyState);
     }

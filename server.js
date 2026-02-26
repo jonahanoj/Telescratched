@@ -279,35 +279,40 @@ io.on('connection', (socket) => {
 
   socket.on('rejoinRoom', ({ code, name }) => {
     name = (name || '').trim();
-    if (!name) return socket.emit('error', 'Name required.');
+    if (!name) return;
 
     const roomCode = code.toUpperCase();
     const room = rooms.get(roomCode);
-    if (!room || !room.started || room.ended) {
-      return socket.emit('error', 'Cannot rejoin this room (game not active).');
+    if (!room) return socket.emit('error', 'Room not found.');
+
+    if (!room.started || room.ended) {
+      return socket.emit('error', 'Game is not active.');   // only for real errors
     }
 
     const idx = room.players.findIndex(p => p.name === name);
-    if (idx === -1) return socket.emit('error', 'Name not found in this game.');
-    if (room.players[idx].id) return socket.emit('error', 'Already connected.');
+    if (idx === -1) return socket.emit('error', 'Player not in this game.');
 
-    // Re-attach this socket to the existing stable player slot
-    room.players[idx].id = socket.id;
-    socket.join(roomCode);
+    const playerSlot = room.players[idx];
 
-    console.log(`[RELIABILITY] ${name} rejoined ${roomCode} (slot ${idx})`);
+    // If this exact socket is already in the slot → just resync (no error)
+    if (playerSlot.id === socket.id) {
+      console.log(`[REJOIN] ${name} already connected – resyncing state`);
+    } else {
+      // Re-attach the socket to the stable slot
+      playerSlot.id = socket.id;
+      socket.join(roomCode);
+      console.log(`[REJOIN] ${name} successfully rejoined ${roomCode} at slot ${idx}`);
+    }
 
     const startTime = room.currentRoundStartTime || Date.now();
     const state = getFullGameState(room, startTime);
+
     socket.emit('rejoinedGame', {
       ...state,
       myIndex: idx,
-      currentReadyState: room.agreements.has(room.players[idx].id)  // works because id is now updated
+      currentReadyState: room.agreements.has(socket.id)
     });
-
-    // Everyone sees the player back in list
-    io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
-  }); 
+  });
 
   socket.on('setSettings', ({ code, settings }) => {
     const room = rooms.get(code);
