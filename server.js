@@ -158,6 +158,7 @@ function getFullGameState(room, startTime = null) {
 
 function startRoundTimer(room, code, startTime) {
   room.roundActive = true;
+  room.currentRoundStartTime = startTime;
   room.roundTimer = setTimeout(() => {
     io.to(code).emit('roundTimeout');  // Tell clients: lock UI, auto-save if needed
 
@@ -218,6 +219,7 @@ function advanceRound(room, code) {
     return;
   }
   const newStartTime = Date.now();
+  room.currentRoundStartTime = newStartTime;
   io.to(code).emit('roundAdvanced', getFullGameState(room, newStartTime));
   startRoundTimer(room, code, newStartTime);
 }
@@ -274,6 +276,38 @@ io.on('connection', (socket) => {
     });
     io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
   });
+
+  socket.on('rejoinRoom', ({ code, name }) => {
+    name = (name || '').trim();
+    if (!name) return socket.emit('error', 'Name required.');
+
+    const roomCode = code.toUpperCase();
+    const room = rooms.get(roomCode);
+    if (!room || !room.started || room.ended) {
+      return socket.emit('error', 'Cannot rejoin this room (game not active).');
+    }
+
+    const idx = room.players.findIndex(p => p.name === name);
+    if (idx === -1) return socket.emit('error', 'Name not found in this game.');
+    if (room.players[idx].id) return socket.emit('error', 'Already connected.');
+
+    // Re-attach this socket to the existing stable player slot
+    room.players[idx].id = socket.id;
+    socket.join(roomCode);
+
+    console.log(`[RELIABILITY] ${name} rejoined ${roomCode} (slot ${idx})`);
+
+    const startTime = room.currentRoundStartTime || Date.now();
+    const state = getFullGameState(room, startTime);
+    socket.emit('rejoinedGame', {
+      ...state,
+      myIndex: idx,
+      currentReadyState: room.agreements.has(room.players[idx].id)  // works because id is now updated
+    });
+
+    // Everyone sees the player back in list
+    io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
+  }); 
 
   socket.on('setSettings', ({ code, settings }) => {
     const room = rooms.get(code);
@@ -365,23 +399,26 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     for (const [code, room] of rooms.entries()) {
-      if (room.roundTimer) {
-        clearTimeout(room.roundTimer);
-        room.roundTimer = null;
-      }
-
+      // CRITICAL: NEVER clear roundTimer here — this was the #1 cause of "round never ended"
       const idx = room.players.findIndex(p => p.id === socket.id);
       if (idx > -1) {
-        room.players.splice(idx, 1);
-        io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
+        const playerName = room.players[idx].name;
 
-        // === ONLY delete empty lobbies that never started ===
-        // Once the game has ended, keep the room (and all final projects)
-        // for the full 10 minutes even if everyone leaves.
-        if (room.players.length === 0 && !room.ended) {
-          rooms.delete(code);
-          console.log(`Room ${code} deleted (empty lobby)`);
+        if (room.started && !room.ended) {
+          // Keep the slot forever during active game (prevents index shift + name disappearing)
+          room.players[idx].id = null;
+          console.log(`[RELIABILITY] ${playerName} temporarily disconnected mid-game in ${code}. Slot preserved for rejoin.`);
+        } else {
+          // Only remove in lobby or after game ended
+          room.players.splice(idx, 1);
+          console.log(`Player ${playerName} left lobby ${code}`);
+          if (room.players.length === 0 && !room.ended) {
+            rooms.delete(code);
+            console.log(`Room ${code} deleted (empty lobby)`);
+          }
         }
+
+        io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
       }
     }
   });

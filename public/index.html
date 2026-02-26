@@ -913,6 +913,21 @@
     socket.on('connect_error', (err) => console.warn('Connection error:', err.message));
     socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
 
+    // === RELIABILITY: Auto-rejoin on hiccups ===
+    socket.on('connect', () => {
+      console.log('✅ Socket (re)connected');
+      if (currentRoom && myName) {
+        setTimeout(() => {  // tiny delay so socket is fully ready
+          socket.emit('rejoinRoom', { code: currentRoom, name: myName });
+        }, 800);
+      }
+    });
+
+    socket.on('reconnect', () => {
+      console.log('✅ Reconnected — attempting rejoin');
+      if (currentRoom && myName) socket.emit('rejoinRoom', { code: currentRoom, name: myName });
+    });
+
     // Safe DOM update
     function safeUpdate(id, fn) {
       const el = document.getElementById(id);
@@ -1590,6 +1605,45 @@
       document.querySelector('header').classList.add('hidden');
     });
 
+    socket.on('rejoinedGame', (data) => {
+      console.log('✅ Rejoined game successfully');
+
+      players = data.players;
+      myIndex = data.myIndex;
+      lockedMyIndex = myIndex;
+      agreements = data.agreements || agreements;
+
+      // Restore UI exactly like roundAdvanced
+      safeUpdate('roundNum', el => el.textContent = data.round);
+      safeUpdate('roundNumSidebar', el => el.textContent = data.round);
+      safeUpdate('fromOwner', el => el.textContent = data.owners ? data.owners[myIndex] : 'your project');
+      safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
+
+      updateGameState(data);
+      updateTimer(data.roundStartTime || Date.now());
+      updatePlayerSidebar();
+      resetRoundUI();
+
+      // Restore ready/pass button state
+      currentReadyState = !!data.currentReadyState;
+      hasAgreedThisRound = currentReadyState;
+      updateReadyButton();
+      const overlay = document.getElementById('editorOverlay');
+      overlay.classList.toggle('show', currentReadyState);
+
+      // Reload editor with the correct project (this fixes the "I'm in the game but editor wrong" feeling)
+      const embed = document.getElementById('scratchEmbed');
+      if (embed) {
+        const origin = window.location.origin;
+        const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
+        embed.src = newUrl;
+      }
+
+      // Make sure game UI is visible
+      document.getElementById('gameSection').classList.remove('hidden');
+      document.getElementById('sidebar').classList.add('visible');
+    });
+
     // Updated: Suppress more errors during timeout grace (now includes "Already uploaded")
     socket.on('error', (msg) => {
       const timeoutErrors = ['Round not active.', 'Already uploaded this round.'];
@@ -1957,6 +2011,10 @@
     }
 
     function toggleReady() {
+      const now = Date.now();
+      if (now - (window.lastReadyToggle || 0) < 800) return; // debounce
+      window.lastReadyToggle = now;
+
       setReady(!currentReadyState);
     }
   </script>
