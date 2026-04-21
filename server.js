@@ -15,21 +15,23 @@ const io = socketIo(server, {
     methods: ["GET", "POST"]
   },
   maxHttpBufferSize: 10e6,   // 10MB for .sb3 uploads
-  pingTimeout: 60000,        // Important for Vercel
-  pingInterval: 25000        // Important for Vercel
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
-
 const BLANK_BUFFER = fs.readFileSync(path.join(__dirname, 'public', 'blank.sb3'));
-
 const rooms = new Map();
 
 app.use(express.static('public'));
-app.use('/turbowarp', express.static(path.join(__dirname, 'public/turbowarp')));  // Serve TurboWarp editor statically
+app.use('/turbowarp', express.static(path.join(__dirname, 'public/turbowarp')));
 app.use(express.json());
 
-// Route: Serve project .sb3 for TurboWarp load
+// --- ROUTES ---
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.get('/download/:code/:index', (req, res) => {
   const { code, index } = req.params;
   const room = rooms.get(code);
@@ -38,71 +40,30 @@ app.get('/download/:code/:index', (req, res) => {
   if (isNaN(idx) || idx < 0 || idx >= room.players.length || !room.projects[idx].buffer) {
     return res.status(404).send('Project not available.');
   }
-  const project = room.projects[idx];
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
-  res.send(project.buffer);
+  res.send(room.projects[idx].buffer);
 });
 
-// This makes the homepage actually load
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// FINAL FIX: Serve final projects EXACTLY like the in-game /download route
 app.get('/final-download/:code/:index', (req, res) => {
   const { code, index } = req.params;
   const room = rooms.get(code);
-
-  if (!room || !room.ended) {
-    return res.status(404).send('Project not found');
-  }
-
+  if (!room || !room.ended) return res.status(404).send('Project not found');
   const idx = parseInt(index);
   if (isNaN(idx) || idx < 0 || idx >= room.players.length || !room.projects[idx]?.buffer) {
     return res.status(404).send('Project not available');
   }
-
-  const project = room.projects[idx];
-
-  // THESE HEADERS ARE IDENTICAL TO YOUR WORKING /download ROUTE
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
-  // NO Content-Disposition → allows TurboWarp to load it inline
-
-  res.send(project.buffer);
+  res.send(room.projects[idx].buffer);
 });
 
-// NEW: Serve final projects for EMBEDDING (no attachment header)
-app.get('/final-embed/:code/:index', (req, res) => {
-  const { code, index } = req.params;
-  const room = rooms.get(code);
-  if (!room || !room.started || !room.ended) return res.status(404).send('Not found');
-
-  const idx = parseInt(index);
-  if (isNaN(idx) || idx < 0 || idx >= room.players.length || !room.projects[idx]?.buffer) {
-    return res.status(404).send('Not found');
-  }
-
-  const project = room.projects[idx];
-
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  // NO Content-Disposition → allows inline loading!
-  res.send(project.buffer);
-});
-
-// Route: Custom addon JS for auto-save/lock + fixes
-// Route: Custom addon JS for auto-save/lock + fixes
 app.get('/addon.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
     export default async function ({ vm, renderer }) {
       window.addEventListener('message', async (e) => {
         if (e.origin !== window.parent.location.origin) return;
-
         if (e.data.type === 'saveAndUpload') {
           try {
             const blob = await vm.saveProjectSb3();
@@ -123,26 +84,26 @@ app.get('/addon.js', (req, res) => {
           }
         } else if (e.data.type === 'lockEditor') {
           vm.pause();
-          console.log('Editor locked');
         } else if (e.data.type === 'unlockEditor') {
-          vm.resume();   // ← THIS WAS MISSING
-          console.log('Editor unlocked');
+          vm.resume();
         } else if (e.data.type === 'setProjectName') {
           vm.runtime.projectName = e.data.name;
         }
       });
-      console.log('Telescratched addon loaded');
     }
   `);
 });
 
+// --- HELPER FUNCTIONS ---
 function generateRoomCode() {
   return crypto.randomBytes(2).toString('hex').toUpperCase();
 }
 
 function getFullGameState(room, startTime = null) {
-  const elapsed = startTime ? Date.now() - startTime : 0;
+  const actualStartTime = startTime || room.currentRoundStartTime || Date.now();
+  const elapsed = Date.now() - actualStartTime;
   const timeLeft = Math.max(0, room.settings.timer - elapsed);
+
   return {
     players: room.players.map(p => p.name),
     projects: room.projects.map(p => ({ filename: p.filename })),
@@ -150,7 +111,7 @@ function getFullGameState(room, startTime = null) {
     uploaded: room.uploaded.map((u, i) => ({ player: room.players[i].name, uploaded: u })),
     agreements: Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || ''),
     round: room.currentRound,
-    roundStartTime: startTime || Date.now(),
+    roundStartTime: actualStartTime, // CRITICAL: Send the absolute start time
     timeLeft,
     maxRounds: room.settings.cycles * room.players.length
   };
@@ -160,110 +121,135 @@ function startRoundTimer(room, code, startTime) {
   room.roundActive = true;
   room.currentRoundStartTime = startTime;
   room.roundTimer = setTimeout(() => {
-    io.to(code).emit('roundTimeout');  // Tell clients: lock UI, auto-save if needed
-
-    // Target only non-uploaded players for auto-save nudge
-    const nonUploadedSockets = room.players.filter((p, i) => !room.uploaded[i]).map(p => p.id);
-    nonUploadedSockets.forEach(socketId => {
-      // Emit to specific socket (Socket.io supports it)
-      io.to(socketId).emit('autoSaveNow');
+    io.to(code).emit('roundTimeout');
+    room.players.filter((p, i) => !room.uploaded[i] && p.id).forEach(p => {
+      io.to(p.id).emit('autoSaveNow');
     });
-
-    // Start 5s countdown/grace immediately (covers VM poll + upload)
     io.to(code).emit('roundEnding');
 
     setTimeout(() => {
-      room.roundActive = false;  // Now reject any late manual uploads
-
-      // Fill blanks for anyone who failed to save
+      room.roundActive = false;
       room.projects.forEach((proj, i) => {
         if (!room.uploaded[i] || !proj.buffer || proj.buffer.length === 0) {
-          proj.buffer = BLANK_BUFFER;
-          proj.filename = 'blank.sb3';
-          room.uploaded[i] = true;  // Mark as "saved" (blank)
+          proj.buffer = proj.buffer || BLANK_BUFFER;
+          proj.filename = proj.filename || 'blank.sb3';
+          room.uploaded[i] = true;
         }
       });
-
-      // Auto-agree everyone
-      room.players.forEach(p => room.agreements.add(p.id));
-      io.to(code).emit('agreementUpdate', room.players.map(p => p.name));
-
-      // Advance immediately (no extra wait—countdown covered it)
+      room.players.forEach(p => p.id && room.agreements.add(p.id));
       advanceRound(room, code);
-    }, 10000);  // 5s total grace/countdown
+    }, 10000);
   }, room.settings.timer);
 }
 
 function advanceRound(room, code) {
   if (room.roundTimer) clearTimeout(room.roundTimer);
-  // Rotate projects: each gets the next player's
+
   const lastProject = room.projects.pop();
   const lastOwner = room.owners.pop();
   room.projects.unshift(lastProject);
   room.owners.unshift(lastOwner);
+
   room.uploaded.fill(false);
   room.agreements.clear();
   room.currentRound++;
+
   const maxRounds = room.settings.cycles * room.players.length;
   if (room.currentRound > maxRounds) {
     room.ended = true;
-    const originalOwners = room.players.map(p => p.name);  // Snapshot originals at end
-    const finalState = {
-      message: `Game over after ${maxRounds} rounds!`,
+    io.to(code).emit('gameEnd', {
       projects: room.projects.map(p => ({ filename: p.filename })),
-      originalOwners: originalOwners
-    };
-    io.to(code).emit('gameEnd', finalState);
-    // Cleanup after 10mins
+      originalOwners: room.players.map(p => p.name)
+    });
     setTimeout(() => rooms.delete(code), 600000);
     return;
   }
+
   const newStartTime = Date.now();
   room.currentRoundStartTime = newStartTime;
   io.to(code).emit('roundAdvanced', getFullGameState(room, newStartTime));
   startRoundTimer(room, code, newStartTime);
 }
 
+// --- SOCKET LOGIC ---
 io.on('connection', (socket) => {
+
   socket.on('createRoom', ({ name }) => {
     name = (name || '').trim();
-    if (name.length < 1 || name.length > 16) {
-      return socket.emit('error', 'Name must be a max of 16 characters long.');
-    }
-
+    if (name.length < 1 || name.length > 16) return socket.emit('error', 'Invalid name.');
     let code;
-    do {
-      code = generateRoomCode();
-    } while (rooms.has(code));
-
-    const defaultSettings = {
-      cycles: 1,
-      timer: 5 * 60 * 1000,
-      maxPlayers: 4   // still defaults to 4, but can go up to 10
-    };
+    do { code = generateRoomCode(); } while (rooms.has(code));
+    const settings = { cycles: 1, timer: 5 * 60 * 1000, maxPlayers: 4 };
     rooms.set(code, {
       players: [{ id: socket.id, name }],
-      settings: defaultSettings,
+      settings,
       settingsConfirmed: false,
       started: false,
-      roundActive: false
+      roundActive: false,
+      currentRound: 0,
+      uploaded: [],
+      agreements: new Set()
     });
     socket.join(code);
-    socket.emit('roomCreated', { code, players: [name], settings: defaultSettings, confirmed: false });
+    socket.emit('roomCreated', { code, players: [name], settings, confirmed: false });
+  });
+
+  socket.on('kickPlayer', ({ code, targetName }) => {
+    const room = rooms.get(code);
+    // Only the host (first player) can kick
+    if (!room || room.players[0].id !== socket.id || room.started) return;
+
+    const targetIdx = room.players.findIndex(p => p.name === targetName);
+    if (targetIdx > -1 && targetIdx !== 0) { // Can't kick the host
+      const kickedSocketId = room.players[targetIdx].id;
+
+      // Remove from the room's player list
+      room.players.splice(targetIdx, 1);
+
+      // Tell that specific socket they were kicked
+      if (kickedSocketId) {
+        io.to(kickedSocketId).emit('kicked');
+        // Force them to leave the socket room
+        const kickedSocket = io.sockets.sockets.get(kickedSocketId);
+        if (kickedSocket) kickedSocket.leave(code);
+      }
+
+      // Update everyone else
+      io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
+    }
   });
 
   socket.on('joinRoom', ({ code, name }) => {
     name = (name || '').trim();
-    if (name.length < 1 || name.length > 16) {
-      return socket.emit('error', 'Name must be a max of 16 characters long.');
-    }
-
-    const roomCode = code.toUpperCase();
+    const roomCode = (code || '').toUpperCase();
     const room = rooms.get(roomCode);
     if (!room) return socket.emit('error', 'Room not found.');
-    if (room.players.find(p => p.name === name)) return socket.emit('error', 'Name taken.');
-    if (room.players.length >= room.settings.maxPlayers) return socket.emit('error', 'Room full.');
+
+    const existingPlayerIndex = room.players.findIndex(p => p.name === name);
+
+    if (existingPlayerIndex !== -1) {
+      if (room.started) {
+        if (room.players[existingPlayerIndex].id === null) {
+          room.players[existingPlayerIndex].id = socket.id;
+          socket.join(roomCode);
+          const state = getFullGameState(room, room.currentRoundStartTime);
+          return socket.emit('rejoinedGame', {
+            ...state,
+            myIndex: existingPlayerIndex,
+            currentReadyState: room.agreements.has(socket.id)
+          });
+        } else {
+          return socket.emit('error', 'This player is already connected.');
+        }
+      } else {
+        if (room.players[existingPlayerIndex].id !== socket.id) {
+          return socket.emit('error', 'Name taken.');
+        }
+      }
+    }
+
     if (room.started) return socket.emit('error', 'Game already started.');
+    if (room.players.length >= room.settings.maxPlayers) return socket.emit('error', 'Room full.');
 
     socket.join(roomCode);
     room.players.push({ id: socket.id, name });
@@ -271,80 +257,30 @@ io.on('connection', (socket) => {
       code: roomCode,
       players: room.players.map(p => p.name),
       settings: room.settings,
-      confirmed: room.settingsConfirmed,
-      started: room.started
+      confirmed: room.settingsConfirmed
     });
     io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
-  });
-
-  socket.on('rejoinRoom', ({ code, name }) => {
-    name = (name || '').trim();
-    if (!name) return;
-
-    const roomCode = code.toUpperCase();
-    const room = rooms.get(roomCode);
-    if (!room) return socket.emit('error', 'Room not found.');
-
-    if (!room.started || room.ended) {
-      return socket.emit('error', 'Game is not active.');   // only for real errors
-    }
-
-    const idx = room.players.findIndex(p => p.name === name);
-    if (idx === -1) return socket.emit('error', 'Player not in this game.');
-
-    const playerSlot = room.players[idx];
-
-    // If this exact socket is already in the slot → just resync (no error)
-    if (playerSlot.id === socket.id) {
-      console.log(`[REJOIN] ${name} already connected – resyncing state`);
-    } else {
-      // Re-attach the socket to the stable slot
-      playerSlot.id = socket.id;
-      socket.join(roomCode);
-      console.log(`[REJOIN] ${name} successfully rejoined ${roomCode} at slot ${idx}`);
-    }
-
-    const startTime = room.currentRoundStartTime || Date.now();
-    const state = getFullGameState(room, startTime);
-
-    socket.emit('rejoinedGame', {
-      ...state,
-      myIndex: idx,
-      currentReadyState: room.agreements.has(socket.id)
-    });
   });
 
   socket.on('setSettings', ({ code, settings }) => {
     const room = rooms.get(code);
     if (!room || room.players[0]?.id !== socket.id) return;
-
-    const newSettings = {
-      ...settings,
-      maxPlayers: Math.min(10, parseInt(settings.maxPlayers) || 4),
-      timer: Math.min(120 * 60 * 1000, parseInt(settings.timer) * 60 * 1000 || 300000),  // max 120 min
-      cycles: Math.min(10, parseInt(settings.cycles) || 1)   // max 10 cycles
+    room.settings = {
+      cycles: Math.min(10, Math.max(1, parseInt(settings.cycles) || 1)),
+      timer: Math.min(120 * 60 * 1000, Math.max(60000, parseInt(settings.timer) * 60 * 1000 || 300000)),
+      maxPlayers: Math.min(10, Math.max(2, parseInt(settings.maxPlayers) || 4))
     };
-
-    if (newSettings.cycles < 1 || newSettings.timer < 60000) {
-      return socket.emit('error', 'Invalid settings.');
-    }
-
-    room.settings = newSettings;
     room.settingsConfirmed = true;
     io.to(code).emit('settingsUpdated', { settings: room.settings, confirmed: true });
-    io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
   });
 
   socket.on('startGame', (code) => {
     const room = rooms.get(code);
-    if (!room || room.players[0]?.id !== socket.id || room.players.length < 2 || !room.settingsConfirmed) {
-      return socket.emit('error', 'Cannot start: Need 2+ players and confirmed settings.');
-    }
+    if (!room || room.players[0]?.id !== socket.id || room.players.length < 2) return;
     room.started = true;
-    room.projects = Array(room.players.length).fill({ buffer: BLANK_BUFFER, filename: 'blank.sb3' });
+    room.projects = room.players.map(() => ({ buffer: BLANK_BUFFER, filename: 'blank.sb3' }));
     room.owners = room.players.map(p => p.name);
-    room.uploaded = new Array(room.players.length).fill(false);
-    room.agreements = new Set();
+    room.uploaded = room.players.map(() => false);
     room.currentRound = 1;
     const startTime = Date.now();
     io.to(code).emit('gameStarted', getFullGameState(room, startTime));
@@ -353,84 +289,50 @@ io.on('connection', (socket) => {
 
   socket.on('uploadFile', ({ code, fileBase64, filename }) => {
     const room = rooms.get(code);
-    if (!room || !room.started || !room.roundActive) return socket.emit('error', 'Round not active.');
-    const index = room.players.findIndex(p => p.id === socket.id);
-    if (index === -1) return socket.emit('error', 'Player not found.');
-
-    // Optional: Still prevent upload after they've agreed
-    const playerAgreed = room.agreements.has(socket.id);
+    if (!room || !room.roundActive) return socket.emit('error', 'Round not active.');
+    const idx = room.players.findIndex(p => p.id === socket.id);
+    if (idx === -1) return;
 
     try {
-      const buffer = Buffer.from(fileBase64, 'base64');
-      room.projects[index] = { buffer, filename };
-      room.uploaded[index] = true;
-      const playerName = room.players[index].name;
-      io.to(code).emit('playerUploaded', { name: playerName, filename });
+      room.projects[idx] = { buffer: Buffer.from(fileBase64, 'base64'), filename };
+      room.uploaded[idx] = true;
+      io.to(code).emit('playerUploaded', { name: room.players[idx].name, filename });
       socket.emit('uploadSuccess', { filename });
-    } catch (err) {
-      console.error('Upload error:', err);
-      socket.emit('error', 'Invalid file data: ' + err.message);
-    }
+    } catch (e) { socket.emit('error', 'Upload failed.'); }
   });
 
-  // ====================== READY / UN-READY HANDLING ======================
-  socket.on('agreeNext', (code) => handleReadyChange(code, true));
-  socket.on('unagreeNext', (code) => handleReadyChange(code, false));
-
-  function handleReadyChange(code, becomingReady) {
+  socket.on('agreeNext', (code) => {
     const room = rooms.get(code);
-    if (!room || !room.started || !room.roundActive) return;
-
-    const playerId = socket.id;
-    if (becomingReady) {
-      if (room.agreements.has(playerId)) return;           // already ready
-      room.agreements.add(playerId);
-    } else {
-      room.agreements.delete(playerId);                    // un-ready
-    }
-
-    // Broadcast updated list so everyone sees checkmarks change
-    const names = Array.from(room.agreements)
-      .map(id => room.players.find(p => p.id === id)?.name || '')
-      .filter(Boolean);
-    io.to(code).emit('agreementUpdate', names);
-
-    // Only start grace period if EVERYONE is now ready
-    if (becomingReady && room.agreements.size === room.players.length) {
+    if (!room || !room.roundActive) return;
+    room.agreements.add(socket.id);
+    io.to(code).emit('agreementUpdate', Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || ''));
+    if (room.agreements.size === room.players.length) {
       io.to(code).emit('roundEnding');
       setTimeout(() => advanceRound(room, code), 10000);
     }
-  }
+  });
+
+  socket.on('unagreeNext', (code) => {
+    const room = rooms.get(code);
+    if (!room) return;
+    room.agreements.delete(socket.id);
+    io.to(code).emit('agreementUpdate', Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || ''));
+  });
 
   socket.on('disconnect', () => {
     for (const [code, room] of rooms.entries()) {
-      // CRITICAL: NEVER clear roundTimer here — this was the #1 cause of "round never ended"
       const idx = room.players.findIndex(p => p.id === socket.id);
-      if (idx > -1) {
-        const playerName = room.players[idx].name;
-
+      if (idx !== -1) {
         if (room.started && !room.ended) {
-          // Keep the slot forever during active game (prevents index shift + name disappearing)
           room.players[idx].id = null;
-          console.log(`[RELIABILITY] ${playerName} temporarily disconnected mid-game in ${code}. Slot preserved for rejoin.`);
         } else {
-          // Only remove in lobby or after game ended
           room.players.splice(idx, 1);
-          console.log(`Player ${playerName} left lobby ${code}`);
-          if (room.players.length === 0 && !room.ended) {
-            rooms.delete(code);
-            console.log(`Room ${code} deleted (empty lobby)`);
-          }
+          if (room.players.length === 0) rooms.delete(code);
         }
-
         io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
       }
     }
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-module.exports = server;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

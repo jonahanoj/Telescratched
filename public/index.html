@@ -1023,38 +1023,40 @@
       });
     }
 
-    function updateTimer(startTime) {
-      roundStartTime = startTime;
+    function updateTimer(serverStartTime) {
+      roundStartTime = serverStartTime;
       if (timerInterval) clearInterval(timerInterval);
-      prevSecond = null;  // Reset beep tracking on new timer
-      // New: Preload beep audio on timer start
-      if (!beepAudio) {
-        beepAudio = new Audio('audio/finalbeep.mp3');
-        beepAudio.preload = 'auto';
-      }
+
       const updateDisplay = () => {
         if (!roundStartTime || !gameSettings.timer) return;
-        const elapsed = Date.now() - roundStartTime;
+
+        // Calculate how much time has passed since the server started the round
+        const now = Date.now();
+        const elapsed = now - roundStartTime;
         let remainingMs = gameSettings.timer - elapsed;
+
         if (remainingMs < 0) remainingMs = 0;
+
         const mins = Math.floor(remainingMs / 60000);
         const secs = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
-        safeUpdate('timeLeft', el => el.textContent = `${mins}:${secs}`);
-        safeUpdate('sidebarTimer', el => el.textContent = `${mins}:${secs}`);
 
-        // New: Beep for last 10 seconds, once per second
+        const timeString = `${mins}:${secs}`;
+        safeUpdate('timeLeft', el => el.textContent = timeString);
+        safeUpdate('sidebarTimer', el => el.textContent = timeString);
+
+        // Beep logic for the last 10 seconds
         const currentSecond = Math.floor(remainingMs / 1000);
         if (remainingMs <= 10000 && remainingMs > 0 && currentSecond !== prevSecond && beepAudio) {
           beepAudio.currentTime = 0;
-          beepAudio.play().catch(e => console.warn('Beep play failed:', e));
+          beepAudio.play().catch(e => { });
           prevSecond = currentSecond;
         }
 
         if (remainingMs <= 0) {
           clearInterval(timerInterval);
-          timerInterval = null;
         }
       };
+
       updateDisplay();
       timerInterval = setInterval(updateDisplay, 1000);
     }
@@ -1328,22 +1330,33 @@
     socket.on('roomCreated', (data) => {
       hideStartScreen();
       currentRoom = data.code;
-      myName = document.getElementById('hostName').value.trim();
+
+      // 1. Get name from the main input field
+      myName = document.getElementById('playerName').value.trim();
+
+      // 2. Explicitly set host status so the UI shows kick buttons
       isHost = true;
+
+      // 3. Sync room settings and current player list
       gameSettings = data.settings;
       settingsSaved = data.confirmed;
       players = data.players;
       myIndex = players.indexOf(myName);
-      safeUpdate('roomInfo', el => el.textContent = `Code: ${data.code}. Share it!`);
-      safeUpdate('createSection', el => el.classList.add('hidden'));
-      safeUpdate('joinSection', el => el.classList.add('hidden'));
-      safeUpdate('settingsSection', el => el.classList.remove('hidden'));
+
+      // 4. Update UI sections
       safeUpdate('currentCode', el => el.textContent = data.code);
+      safeUpdate('settingsSection', el => el.classList.remove('hidden'));
       safeUpdate('waitingSection', el => el.classList.remove('hidden'));
+
+      // 5. Render the player list with host-only buttons
       updatePlayers(players);
-      updateStartBtn();  // Ensure button state on create
+
+      // 6. Refresh the "Start Game" button state
+      updateStartBtn();
+
+      // 7. Lock the lobby inputs and show host-only edit controls
       lockLobby();
-      updateHostControls();   // ← ADD THIS LINE
+      updateHostControls();
     });
 
     socket.on('roomJoined', (data) => {
@@ -1366,20 +1379,17 @@
       updateHostControls();   // ← ADD THIS LINE
     });
 
+    // FIND THIS AROUND LINE 1142 AND REPLACE IT:
     socket.on('playerListUpdate', (pList) => {
       players = pList;
-      // Safeguard: Recompute myIndex safely
       myIndex = myName ? players.indexOf(myName) : -1;
+
+      // Call the function that actually builds the buttons
       updatePlayers(players);
-      updateStartBtn();  // Always refresh button after list update
-      // Force UI refresh if in waiting room
-      if (!document.getElementById('waitingSection').classList.contains('hidden')) {
-        safeUpdate('playersList', el => {
-          el.innerHTML = players.map(p => `<li>${p}</li>`).join('');
-        });
-      }
+
+      updateStartBtn();
       updatePlayerSidebar();
-      updateHostControls();   // ← ADD THIS LINE
+      updateHostControls();
     });
 
     socket.on('settingsUpdated', (data) => {
@@ -1467,6 +1477,7 @@
       document.querySelector('header').classList.add('hidden');
       safeUpdate('roundNumSidebar', el => el.textContent = data.round);
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
+      startAutoBackup();
     });
 
     socket.on('roundAdvanced', (data) => {
@@ -1625,49 +1636,52 @@
     socket.on('rejoinedGame', (data) => {
       console.log('✅ Successfully rejoined game');
 
+      // 1. Update local state
       players = data.players;
       myIndex = data.myIndex;
-      lockedMyIndex = myIndex;
-      agreements = data.agreements || [];
-      gameSettings = data.settings || gameSettings;   // safety
+      // Ensure we use the most up-to-date room/name from local storage
+      currentRoom = localStorage.getItem('telescratched_code') || currentRoom;
+      myName = localStorage.getItem('telescratched_name') || myName;
 
-      // === FORCE CORRECT UI (fixes "Reset non-host stuff") ===
-      document.getElementById('startScreen').style.display = 'none';
-      document.getElementById('waitingSection').classList.add('hidden');
-      document.getElementById('settingsSection').classList.add('hidden');
-      document.getElementById('gameEndSection').classList.add('hidden');
+      // 2. Fix UI visibility
+      document.querySelector('header').classList.add('hidden'); // Hides the top logo
+      hideStartScreen(); // Hides the Create/Join panels
+
+      // 3. Show Game Sections
       document.getElementById('gameSection').classList.remove('hidden');
+      document.getElementById('sidebar').classList.remove('hidden');
       document.getElementById('sidebar').classList.add('visible');
-      document.querySelector('header').classList.add('hidden');
 
-      // Restore round & owner info
-      safeUpdate('roundNum', el => el.textContent = data.round || 1);
-      safeUpdate('roundNumSidebar', el => el.textContent = data.round || 1);
-      safeUpdate('fromOwner', el => el.textContent = data.owners ? data.owners[myIndex] : 'your project');
-      safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
-
-      updateGameState(data);
-      updateTimer(data.roundStartTime || Date.now());
-      updatePlayerSidebar();
-      resetRoundUI();
-
-      // Restore Pass Project button state
-      currentReadyState = !!data.currentReadyState;
-      hasAgreedThisRound = currentReadyState;
-      updateReadyButton();
-
-      const overlay = document.getElementById('editorOverlay');
-      if (overlay) overlay.classList.toggle('show', currentReadyState);
-
-      // Reload the exact editor you should be editing
+      // 4. Reload the Scratch Editor
       const embed = document.getElementById('scratchEmbed');
-      if (embed) {
-        const origin = window.location.origin;
-        const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
-        embed.src = newUrl;
-      }
+      const origin = window.location.origin;
+      const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
 
-      updateStartBtn();
+      // Show the spinner before setting the source
+      safeUpdate('loadingSpinner', el => el.style.display = 'block');
+      embed.src = newUrl;
+
+      embed.onload = () => {
+        // 5. Hide spinner ONLY when the iframe is actually ready
+        safeUpdate('loadingSpinner', el => el.style.display = 'none');
+
+        // Sync project name to the VM inside the iframe
+        if (embed.contentWindow && data.projects[myIndex].filename) {
+          const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
+          embed.contentWindow.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+        }
+      };
+
+      // 6. Final Sync & Start Loops
+      updateGameState(data);
+      updateTimer(data.roundStartTime);
+
+      // Start the 30-second background save loop
+      startAutoBackup();
+
+      // Update sidebar info
+      safeUpdate('roundNumSidebar', el => el.textContent = data.round);
+      safeUpdate('maxRounds', el => el.textContent = data.maxRounds);
     });
 
     // Updated: Suppress more errors during timeout grace (now includes "Already uploaded")
@@ -1787,8 +1801,57 @@
     function updatePlayers(pList) {
       players = pList;
       const list = document.getElementById('playersList');
-      if (list) list.innerHTML = players.map(p => `<li>${p}</li>`).join('');
+      if (!list) return;
+
+      list.innerHTML = ''; // Clear old names
+
+      players.forEach((p, index) => {
+        const li = document.createElement('li');
+        li.style.display = 'flex';
+        li.style.justifyContent = 'space-between';
+        li.style.alignItems = 'center';
+        li.style.padding = '10px';
+        li.style.margin = '5px 0';
+        li.style.background = '#f8f9fa';
+        li.style.borderRadius = '4px';
+        li.style.borderLeft = '3px solid #F8A936';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = p;
+        li.appendChild(nameSpan);
+
+        // Only show X for the host, and never on the host's own name (index 0)
+        if (isHost && index !== 0) {
+          const kickBtn = document.createElement('button');
+          kickBtn.textContent = 'X';
+          kickBtn.style.background = '#ff4d4d';
+          kickBtn.style.color = 'white';
+          kickBtn.style.border = 'none';
+          kickBtn.style.borderRadius = '4px';
+          kickBtn.style.padding = '2px 8px';
+          kickBtn.style.cursor = 'pointer';
+          kickBtn.style.fontWeight = 'bold';
+          kickBtn.style.marginLeft = '10px';
+
+          kickBtn.onclick = () => kickPlayer(p);
+          li.appendChild(kickBtn);
+        }
+        list.appendChild(li);
+      });
     }
+
+    // The actual kick logic to send to server
+    function kickPlayer(targetName) {
+      if (confirm(`Are you sure you want to kick ${targetName}?`)) {
+        socket.emit('kickPlayer', { code: currentRoom, targetName });
+      }
+    }
+
+    // Handle being kicked
+    socket.on('kicked', () => {
+      alert('You have been kicked from the room.');
+      location.reload(); // Send them back to the start screen
+    });
 
     function hideStartScreen() {
       const el = document.getElementById('startScreen');
@@ -1916,17 +1979,15 @@
       const name = document.getElementById('playerName').value.trim();
       const code = document.getElementById('joinCode').value.trim().toUpperCase();
 
-      if (!name) {
-        alert('Please enter your name');
-        return;
-      }
-      if (!code) {
-        alert('Please enter the room code');
-        return;
-      }
+      if (!name) return alert('Please enter your name');
+      if (!code) return alert('Please enter the room code');
 
-      document.getElementById('joinName').value = name;     // fill hidden field
-      joinRoom();                                           // ← your original function
+      // ADD THIS: Save to local storage for easy rejoining after a refresh
+      localStorage.setItem('telescratched_name', name);
+      localStorage.setItem('telescratched_code', code);
+
+      document.getElementById('joinName').value = name;
+      joinRoom();
     });
 
     // Tab switching
@@ -2009,6 +2070,19 @@
       }
     });
 
+    window.addEventListener('load', () => {
+      const savedName = localStorage.getItem('telescratched_name');
+      const savedCode = localStorage.getItem('telescratched_code');
+      if (savedName) {
+        // Fill all name inputs (create and join tabs)
+        const nameInputs = document.querySelectorAll('#playerName');
+        nameInputs.forEach(input => input.value = savedName);
+      }
+      if (savedCode) {
+        document.getElementById('joinCode').value = savedCode;
+      }
+    });
+
 
 
     function updateReadyButton() {
@@ -2043,6 +2117,44 @@
 
       setReady(!currentReadyState);
     }
+
+    // Inside index.html, near your other interval logic
+    let backupSaveInterval = null;
+
+    function startAutoBackup() {
+      if (backupSaveInterval) clearInterval(backupSaveInterval);
+
+      backupSaveInterval = setInterval(() => {
+        // Only auto-backup if we are in the game, the editor is active, and we haven't already "passed"
+        const isGameVisible = !document.getElementById('gameSection').classList.contains('hidden');
+        if (isGameVisible && !hasAgreedThisRound && !isTimeoutActive) {
+          console.log("Running 30-second background backup...");
+
+          saveFromEditor()
+            .then(({ base64, filename }) => {
+              socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
+            })
+            .catch(err => console.warn("Background backup skipped:", err));
+        }
+      }, 30000); // 30 seconds
+    }
+
+    // Call startAutoBackup() inside your socket.on('gameStarted') 
+    // and socket.on('rejoinedGame') handlers.
+
+    // Trigger an emergency save if the user refreshes or closes the tab
+    window.onbeforeunload = function () {
+      if (currentRoom && !document.getElementById('gameSection').classList.contains('hidden')) {
+        // We can't wait for a full upload here, but we can trigger one
+        // and hope the socket stays open for the half-second it takes.
+        const embed = document.getElementById('scratchEmbed');
+        if (embed && embed.contentWindow) {
+          saveFromEditor().then(({ base64, filename }) => {
+            socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
+          });
+        }
+      }
+    };
   </script>
   <script>(function () { function c() { var b = a.contentDocument || a.contentWindow.document; if (b) { var d = b.createElement('script'); d.innerHTML = "window.__CF$cv$params={r:'9cda6295bfb48268',t:'MTc3MTA0OTI0NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);"; b.getElementsByTagName('head')[0].appendChild(d) } } if (document.body) { var a = document.createElement('iframe'); a.height = 1; a.width = 1; a.style.position = 'absolute'; a.style.top = 0; a.style.left = 0; a.style.border = 'none'; a.style.visibility = 'hidden'; document.body.appendChild(a); if ('loading' !== document.readyState) c(); else if (window.addEventListener) document.addEventListener('DOMContentLoaded', c); else { var e = document.onreadystatechange || function () { }; document.onreadystatechange = function (b) { e(b); 'loading' !== document.readyState && (document.onreadystatechange = e, c()) } } } })();</script>
 </body>
