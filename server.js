@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const http = require('http');
 const socketIo = require('socket.io');
+const { WebSocketServer } = require('ws'); // <-- Added for Godot matchmaking
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -9,6 +10,8 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
+
+// Existing Socket.io Setup for the Web Game
 const io = socketIo(server, {
   cors: {
     origin: "*",
@@ -18,6 +21,82 @@ const io = socketIo(server, {
   pingTimeout: 60000,
   pingInterval: 25000
 });
+
+// --- GODOT MATCHMAKING ROOMS STORE ---
+const godotRooms = new Map(); // Store active P2P rooms: Code -> { host: ws, client: ws }
+
+// Initialize raw WebSocket server for Godot without bound port (handled via HTTP upgrade)
+const wssGodot = new WebSocketServer({ noServer: true });
+
+function generateFiveLetterCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Readable uppercase alphanumeric strings
+  let code = '';
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+wssGodot.on('connection', (ws) => {
+  let currentRoomCode = null;
+
+  ws.on('message', (message) => {
+    try {
+      const msg = JSON.parse(message);
+
+      switch (msg.type) {
+        case 'create_room':
+          const roomCode = generateFiveLetterCode();
+          godotRooms.set(roomCode, { host: ws, client: null });
+          currentRoomCode = roomCode;
+          ws.send(JSON.stringify({ type: 'room_created', roomCode: roomCode }));
+          break;
+
+        case 'join_room':
+          const targetCode = (msg.roomCode || '').toUpperCase();
+          if (godotRooms.has(targetCode)) {
+            const room = godotRooms.get(targetCode);
+            if (!room.client) {
+              room.client = ws;
+              currentRoomCode = targetCode;
+              // Alert the host that a client joined so they can initiate a WebRTC handshake
+              room.host.send(JSON.stringify({ type: 'client_joined' }));
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'Room full.' }));
+            }
+          } else {
+            ws.send(JSON.stringify({ type: 'error', message: 'Room not found.' }));
+          }
+          break;
+
+        case 'signal':
+          // Pipe the WebRTC session descriptions directly to the opposite peer
+          if (godotRooms.has(currentRoomCode)) {
+            const room = godotRooms.get(currentRoomCode);
+            const targetPeer = (ws === room.host) ? room.client : room.host;
+            if (targetPeer) {
+              targetPeer.send(JSON.stringify({ type: 'signal', data: msg.payload }));
+            }
+          }
+          break;
+      }
+    } catch (e) {
+      console.error("Godot matchmaking protocol error:", e);
+    }
+  });
+
+  ws.on('close', () => {
+    if (currentRoomCode && godotRooms.has(currentRoomCode)) {
+      const room = godotRooms.get(currentRoomCode);
+      const targetPeer = (ws === room.host) ? room.client : room.host;
+      if (targetPeer) {
+        targetPeer.send(JSON.stringify({ type: 'error', message: 'Peer disconnected.' }));
+      }
+      godotRooms.delete(currentRoomCode);
+    }
+  });
+});
+
 
 const upload = multer({ storage: multer.memoryStorage() });
 const BLANK_BUFFER = fs.readFileSync(path.join(__dirname, 'public', 'blank.sb3'));
@@ -111,7 +190,7 @@ function getFullGameState(room, startTime = null) {
     uploaded: room.uploaded.map((u, i) => ({ player: room.players[i].name, uploaded: u })),
     agreements: Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || ''),
     round: room.currentRound,
-    roundStartTime: actualStartTime, // CRITICAL: Send the absolute start time
+    roundStartTime: actualStartTime,
     timeLeft,
     maxRounds: room.settings.cycles * room.players.length
   };
@@ -196,25 +275,18 @@ io.on('connection', (socket) => {
 
   socket.on('kickPlayer', ({ code, targetName }) => {
     const room = rooms.get(code);
-    // Only the host (first player) can kick
     if (!room || room.players[0].id !== socket.id || room.started) return;
 
     const targetIdx = room.players.findIndex(p => p.name === targetName);
-    if (targetIdx > -1 && targetIdx !== 0) { // Can't kick the host
+    if (targetIdx > -1 && targetIdx !== 0) {
       const kickedSocketId = room.players[targetIdx].id;
-
-      // Remove from the room's player list
       room.players.splice(targetIdx, 1);
 
-      // Tell that specific socket they were kicked
       if (kickedSocketId) {
         io.to(kickedSocketId).emit('kicked');
-        // Force them to leave the socket room
         const kickedSocket = io.sockets.sockets.get(kickedSocketId);
         if (kickedSocket) kickedSocket.leave(code);
       }
-
-      // Update everyone else
       io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
     }
   });
@@ -333,6 +405,21 @@ io.on('connection', (socket) => {
       }
     }
   });
+});
+
+// --- DUAL-INTERCEPT UPGRADE ENGINE ---
+// Intercepts connection requests and determines if they should go to Socket.io or Godot
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+  
+  if (pathname === '/ws/matchmaking') {
+    wssGodot.handleUpgrade(request, socket, head, (ws) => {
+      wssGodot.emit('connection', ws, request);
+    });
+  } else {
+    // Leave all other socket-level paths (like /socket.io/) to the default Socket.io connection pipeline
+    return;
+  }
 });
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
