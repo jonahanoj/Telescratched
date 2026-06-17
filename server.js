@@ -59,8 +59,13 @@ wssGodot.on('connection', (ws) => {
             if (!room.client) {
               room.client = ws;
               currentRoomCode = targetCode;
-              // Alert the host that a client joined so they can initiate a WebRTC handshake
-              room.host.send(JSON.stringify({ type: 'client_joined' }));
+
+              // FIX: Generate a unique ID for the client (e.g., 2) so it doesn't conflict with Host ID 1
+              const clientId = 2;
+
+              // Send the unique client ID to both sides so they know who they are connecting to
+              room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
+              room.client.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
             } else {
               ws.send(JSON.stringify({ type: 'error', message: 'Room full.' }));
             }
@@ -411,7 +416,7 @@ io.on('connection', (socket) => {
 // Intercepts connection requests and determines if they should go to Socket.io or Godot
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-  
+
   if (pathname === '/ws/matchmaking') {
     wssGodot.handleUpgrade(request, socket, head, (ws) => {
       wssGodot.emit('connection', ws, request);
