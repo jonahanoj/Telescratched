@@ -11,7 +11,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 
-// Existing Socket.io Setup for the Web Game
 const io = socketIo(server, {
   cors: {
     origin: "*",
@@ -22,10 +21,8 @@ const io = socketIo(server, {
   pingInterval: 25000
 });
 
-// --- GODOT MATCHMAKING ROOMS STORE ---
+// --- GODOT MATCHMAKING MODULE ---
 const godotRooms = new Map(); 
-
-// Initialize raw WebSocket server for Godot
 const wssGodot = new WebSocketServer({ noServer: true });
 
 function generateFiveLetterCode() {
@@ -60,7 +57,7 @@ wssGodot.on('connection', (ws) => {
               room.client = ws;
               currentRoomCode = targetCode;
 
-              const clientId = 2; // Unique ID to prevent host (1) naming conflicts
+              const clientId = 2; // Fixed remote peer assignment ID
 
               room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
               room.client.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
@@ -93,7 +90,7 @@ wssGodot.on('connection', (ws) => {
           break;
       }
     } catch (e) {
-      console.error("Godot matchmaking protocol error:", e);
+      console.error("Godot matchmaking error:", e);
     }
   });
 
@@ -117,7 +114,6 @@ app.use(express.static('public'));
 app.use('/turbowarp', express.static(path.join(__dirname, 'public/turbowarp')));
 app.use(express.json());
 
-// --- ROUTES ---
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -183,11 +179,6 @@ app.get('/addon.js', (req, res) => {
     }
   `);
 });
-
-// --- HELPER FUNCTIONS ---
-function generateRoomCode() {
-  return crypto.randomBytes(2).toString('hex').toUpperCase();
-}
 
 function getFullGameState(room, startTime = null) {
   const actualStartTime = startTime || room.currentRoundStartTime || Date.now();
@@ -261,9 +252,7 @@ function advanceRound(room, code) {
   startRoundTimer(room, code, newStartTime);
 }
 
-// --- SOCKET LOGIC ---
 io.on('connection', (socket) => {
-
   socket.on('createRoom', ({ name }) => {
     name = (name || '').trim();
     if (name.length < 1 || name.length > 16) return socket.emit('error', 'Invalid name.');
@@ -287,12 +276,10 @@ io.on('connection', (socket) => {
   socket.on('kickPlayer', ({ code, targetName }) => {
     const room = rooms.get(code);
     if (!room || room.players[0].id !== socket.id || room.started) return;
-
     const targetIdx = room.players.findIndex(p => p.name === targetName);
     if (targetIdx > -1 && targetIdx !== 0) {
       const kickedSocketId = room.players[targetIdx].id;
       room.players.splice(targetIdx, 1);
-
       if (kickedSocketId) {
         io.to(kickedSocketId).emit('kicked');
         const kickedSocket = io.sockets.sockets.get(kickedSocketId);
@@ -309,25 +296,18 @@ io.on('connection', (socket) => {
     if (!room) return socket.emit('error', 'Room not found.');
 
     const existingPlayerIndex = room.players.findIndex(p => p.name === name);
-
     if (existingPlayerIndex !== -1) {
       if (room.started) {
         if (room.players[existingPlayerIndex].id === null) {
           room.players[existingPlayerIndex].id = socket.id;
           socket.join(roomCode);
           const state = getFullGameState(room, room.currentRoundStartTime);
-          return socket.emit('rejoinedGame', {
-            ...state,
-            myIndex: existingPlayerIndex,
-            currentReadyState: room.agreements.has(socket.id)
-          });
+          return socket.emit('rejoinedGame', { ...state, myIndex: existingPlayerIndex, currentReadyState: room.agreements.has(socket.id) });
         } else {
           return socket.emit('error', 'This player is already connected.');
         }
       } else {
-        if (room.players[existingPlayerIndex].id !== socket.id) {
-          return socket.emit('error', 'Name taken.');
-        }
+        if (room.players[existingPlayerIndex].id !== socket.id) return socket.emit('error', 'Name taken.');
       }
     }
 
@@ -336,12 +316,7 @@ io.on('connection', (socket) => {
 
     socket.join(roomCode);
     room.players.push({ id: socket.id, name });
-    socket.emit('roomJoined', {
-      code: roomCode,
-      players: room.players.map(p => p.name),
-      settings: room.settings,
-      confirmed: room.settingsConfirmed
-    });
+    socket.emit('roomJoined', { code: roomCode, players: room.players.map(p => p.name), settings: room.settings, confirmed: room.settingsConfirmed });
     io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
   });
 
@@ -375,7 +350,6 @@ io.on('connection', (socket) => {
     if (!room || !room.roundActive) return socket.emit('error', 'Round not active.');
     const idx = room.players.findIndex(p => p.id === socket.id);
     if (idx === -1) return;
-
     try {
       room.projects[idx] = { buffer: Buffer.from(fileBase64, 'base64'), filename };
       room.uploaded[idx] = true;
@@ -418,10 +392,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// --- DUAL-INTERCEPT UPGRADE ENGINE ---
+// --- ROUTE UPGRADE HANDLER ---
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-  
   if (pathname === '/ws/matchmaking') {
     wssGodot.handleUpgrade(request, socket, head, (ws) => {
       wssGodot.emit('connection', ws, request);
