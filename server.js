@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const http = require('http');
 const socketIo = require('socket.io');
-const { WebSocketServer } = require('ws'); // <-- Added for Godot matchmaking
+const { WebSocketServer } = require('ws'); // Added for Godot matchmaking
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -60,10 +60,9 @@ wssGodot.on('connection', (ws) => {
               room.client = ws;
               currentRoomCode = targetCode;
 
-              // FIX: Generate a unique ID for the client (e.g., 2) so it doesn't conflict with Host ID 1
-              const clientId = 2;
+              const clientId = 2; // Assign ID 2 to client to avoid conflicting with host ID 1
 
-              // Send the unique client ID to both sides so they know who they are connecting to
+              // Send unique client ID assignment to both sides to kick off the connection process
               room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
               room.client.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
             } else {
@@ -75,12 +74,23 @@ wssGodot.on('connection', (ws) => {
           break;
 
         case 'signal':
-          // Pipe the WebRTC session descriptions directly to the opposite peer
+          // Relays SDP offers and answers directly between the host and client [cite: 4]
           if (godotRooms.has(currentRoomCode)) {
             const room = godotRooms.get(currentRoomCode);
             const targetPeer = (ws === room.host) ? room.client : room.host;
             if (targetPeer) {
               targetPeer.send(JSON.stringify({ type: 'signal', data: msg.payload }));
+            }
+          }
+          break;
+
+        case 'ice_candidate':
+          // Forwards physical network path routing parameters between the peers [cite: 5]
+          if (godotRooms.has(currentRoomCode)) {
+            const room = godotRooms.get(currentRoomCode);
+            const targetPeer = (ws === room.host) ? room.client : room.host;
+            if (targetPeer) {
+              targetPeer.send(JSON.stringify({ type: 'ice_candidate', data: msg.payload }));
             }
           }
           break;
@@ -101,7 +111,6 @@ wssGodot.on('connection', (ws) => {
     }
   });
 });
-
 
 const upload = multer({ storage: multer.memoryStorage() });
 const BLANK_BUFFER = fs.readFileSync(path.join(__dirname, 'public', 'blank.sb3'));
@@ -413,16 +422,15 @@ io.on('connection', (socket) => {
 });
 
 // --- DUAL-INTERCEPT UPGRADE ENGINE ---
-// Intercepts connection requests and determines if they should go to Socket.io or Godot
+// Intercepts socket handshake requests and routes them to Socket.io or Godot's ws handler
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-
+  
   if (pathname === '/ws/matchmaking') {
     wssGodot.handleUpgrade(request, socket, head, (ws) => {
       wssGodot.emit('connection', ws, request);
     });
   } else {
-    // Leave all other socket-level paths (like /socket.io/) to the default Socket.io connection pipeline
     return;
   }
 });
