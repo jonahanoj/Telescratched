@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const http = require('http');
 const socketIo = require('socket.io');
-const { WebSocketServer } = require('ws'); // Added for Godot matchmaking
+const { WebSocketServer } = require('ws'); 
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -17,19 +17,19 @@ const io = socketIo(server, {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  maxHttpBufferSize: 10e6,   // 10MB for .sb3 uploads
+  maxHttpBufferSize: 10e6,   
   pingTimeout: 60000,
   pingInterval: 25000
 });
 
 // --- GODOT MATCHMAKING ROOMS STORE ---
-const godotRooms = new Map(); // Store active P2P rooms: Code -> { host: ws, client: ws }
+const godotRooms = new Map(); 
 
-// Initialize raw WebSocket server for Godot without bound port (handled via HTTP upgrade)
+// Initialize raw WebSocket server for Godot
 const wssGodot = new WebSocketServer({ noServer: true });
 
 function generateFiveLetterCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Readable uppercase alphanumeric strings
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; 
   let code = '';
   for (let i = 0; i < 5; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -60,9 +60,8 @@ wssGodot.on('connection', (ws) => {
               room.client = ws;
               currentRoomCode = targetCode;
 
-              const clientId = 2; // Assign ID 2 to client to avoid conflicting with host ID 1
+              const clientId = 2; // Unique ID to prevent host (1) naming conflicts
 
-              // Send unique client ID assignment to both sides to kick off the connection process
               room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
               room.client.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
             } else {
@@ -74,7 +73,6 @@ wssGodot.on('connection', (ws) => {
           break;
 
         case 'signal':
-          // Relays SDP offers and answers directly between the host and client
           if (godotRooms.has(currentRoomCode)) {
             const room = godotRooms.get(currentRoomCode);
             const targetPeer = (ws === room.host) ? room.client : room.host;
@@ -85,7 +83,6 @@ wssGodot.on('connection', (ws) => {
           break;
 
         case 'ice_candidate':
-          // Forwards physical network path routing parameters between the peers
           if (godotRooms.has(currentRoomCode)) {
             const room = godotRooms.get(currentRoomCode);
             const targetPeer = (ws === room.host) ? room.client : room.host;
@@ -422,7 +419,6 @@ io.on('connection', (socket) => {
 });
 
 // --- DUAL-INTERCEPT UPGRADE ENGINE ---
-// Intercepts socket handshake requests and routes them to Socket.io or Godot's ws handler
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
   
