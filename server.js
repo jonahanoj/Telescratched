@@ -74,7 +74,7 @@ wssGodot.on('connection', (ws) => {
           break;
 
         case 'signal':
-          // Relays SDP offers and answers directly between the host and client [cite: 4]
+          // Relays SDP offers and answers directly between the host and client
           if (godotRooms.has(currentRoomCode)) {
             const room = godotRooms.get(currentRoomCode);
             const targetPeer = (ws === room.host) ? room.client : room.host;
@@ -85,7 +85,7 @@ wssGodot.on('connection', (ws) => {
           break;
 
         case 'ice_candidate':
-          // Forwards physical network path routing parameters between the peers [cite: 5]
+          // Forwards physical network path routing parameters between the peers
           if (godotRooms.has(currentRoomCode)) {
             const room = godotRooms.get(currentRoomCode);
             const targetPeer = (ws === room.host) ? room.client : room.host;
