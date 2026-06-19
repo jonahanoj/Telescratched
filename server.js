@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const http = require('http');
 const socketIo = require('socket.io');
-const { WebSocketServer } = require('ws'); 
+const { WebSocketServer } = require('ws');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -23,13 +23,13 @@ const io = socketIo(server, {
 });
 
 // --- GODOT MATCHMAKING ROOMS STORE ---
-const godotRooms = new Map(); // Store active P2P rooms: Code -> { host: ws, client: ws }
+const godotRooms = new Map(); // roomCode -> { host: ws, client: ws | null }
 
-// Initialize raw WebSocket server for Godot without bound port (handled via HTTP upgrade)
+// Initialize raw WebSocket server for Godot (no bound port — handled via HTTP upgrade)
 const wssGodot = new WebSocketServer({ noServer: true });
 
 function generateFiveLetterCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; 
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 5; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -37,78 +37,113 @@ function generateFiveLetterCode() {
   return code;
 }
 
-wssGodot.on('connection', (ws) => {
+// Clean up stale rooms every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of godotRooms.entries()) {
+    if (now - room.createdAt > 30 * 60 * 1000) { // 30 minute max lifetime
+      godotRooms.delete(code);
+      console.log(`[Godot] Cleaned up stale room: ${code}`);
+    }
+  }
+}, 10 * 60 * 1000);
+
+wssGodot.on('connection', (ws, req) => {
   let currentRoomCode = null;
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  console.log(`[Godot] New WS connection from ${clientIp}`);
 
   ws.on('message', (message) => {
+    let msg;
     try {
-      const msg = JSON.parse(message);
-
-      switch (msg.type) {
-        case 'create_room':
-          const roomCode = generateFiveLetterCode();
-          godotRooms.set(roomCode, { host: ws, client: null });
-          currentRoomCode = roomCode;
-          ws.send(JSON.stringify({ type: 'room_created', roomCode: roomCode }));
-          break;
-
-        case 'join_room':
-          const targetCode = (msg.roomCode || '').toUpperCase();
-          if (godotRooms.has(targetCode)) {
-            const room = godotRooms.get(targetCode);
-            if (!room.client) {
-              room.client = ws;
-              currentRoomCode = targetCode;
-
-              const clientId = 2; // Assign ID 2 to client to avoid conflicting with host ID 1
-
-              // Send unique client ID assignment to both sides to kick off the connection process
-              room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
-              room.client.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
-            } else {
-              ws.send(JSON.stringify({ type: 'error', message: 'Room full.' }));
-            }
-          } else {
-            ws.send(JSON.stringify({ type: 'error', message: 'Room not found.' }));
-          }
-          break;
-
-        case 'signal':
-          // Relays SDP offers and answers directly between the host and client
-          if (godotRooms.has(currentRoomCode)) {
-            const room = godotRooms.get(currentRoomCode);
-            const targetPeer = (ws === room.host) ? room.client : room.host;
-            if (targetPeer) {
-              targetPeer.send(JSON.stringify({ type: 'signal', data: msg.payload }));
-            }
-          }
-          break;
-
-        case 'ice_candidate':
-          // Forwards physical network path routing parameters between the peers
-          if (godotRooms.has(currentRoomCode)) {
-            const room = godotRooms.get(currentRoomCode);
-            const targetPeer = (ws === room.host) ? room.client : room.host;
-            if (targetPeer) {
-              targetPeer.send(JSON.stringify({ type: 'ice_candidate', data: msg.payload }));
-            }
-          }
-          break;
-      }
+      msg = JSON.parse(message);
     } catch (e) {
-      console.error("Godot matchmaking protocol error:", e);
+      console.error('[Godot] Failed to parse message:', e);
+      return;
+    }
+
+    switch (msg.type) {
+      case 'create_room': {
+        // If this socket already has a room, clean up the old one first
+        if (currentRoomCode && godotRooms.has(currentRoomCode)) {
+          godotRooms.delete(currentRoomCode);
+        }
+        let roomCode;
+        // Avoid (very unlikely) collisions
+        do { roomCode = generateFiveLetterCode(); } while (godotRooms.has(roomCode));
+
+        godotRooms.set(roomCode, { host: ws, client: null, createdAt: Date.now() });
+        currentRoomCode = roomCode;
+        console.log(`[Godot] Room created: ${roomCode}`);
+        ws.send(JSON.stringify({ type: 'room_created', roomCode }));
+        break;
+      }
+
+      case 'join_room': {
+        const targetCode = (msg.roomCode || '').toUpperCase();
+        if (!godotRooms.has(targetCode)) {
+          return ws.send(JSON.stringify({ type: 'error', message: 'Room not found.' }));
+        }
+        const room = godotRooms.get(targetCode);
+        if (room.client) {
+          return ws.send(JSON.stringify({ type: 'error', message: 'Room is full.' }));
+        }
+
+        room.client = ws;
+        currentRoomCode = targetCode;
+
+        const clientId = 2; // Host is always peer 1, client is always peer 2
+        console.log(`[Godot] Client joined room: ${targetCode} as peer ${clientId}`);
+
+        // Tell the client its peer ID (client will initiate WebRTC connection)
+        ws.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
+        // Tell the host a client joined so it can set up its side of RTC
+        room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
+        break;
+      }
+
+      case 'signal': {
+        // Relay SDP offer/answer between host and client
+        const room = godotRooms.get(currentRoomCode);
+        if (!room) return;
+        const target = ws === room.host ? room.client : room.host;
+        if (target && target.readyState === target.OPEN) {
+          target.send(JSON.stringify({ type: 'signal', data: msg.payload }));
+        }
+        break;
+      }
+
+      case 'ice_candidate': {
+        // Relay ICE candidates between host and client
+        const room = godotRooms.get(currentRoomCode);
+        if (!room) return;
+        const target = ws === room.host ? room.client : room.host;
+        if (target && target.readyState === target.OPEN) {
+          target.send(JSON.stringify({ type: 'ice_candidate', data: msg.payload }));
+        }
+        break;
+      }
+
+      default:
+        console.warn(`[Godot] Unknown message type: ${msg.type}`);
     }
   });
 
   ws.on('close', () => {
+    console.log(`[Godot] WS connection closed (was in room: ${currentRoomCode})`);
     if (currentRoomCode && godotRooms.has(currentRoomCode)) {
       const room = godotRooms.get(currentRoomCode);
-      const targetPeer = (ws === room.host) ? room.client : room.host;
-      if (targetPeer) {
-        targetPeer.send(JSON.stringify({ type: 'error', message: 'Peer disconnected.' }));
+      // Notify the other peer that their opponent disconnected
+      const otherPeer = ws === room.host ? room.client : room.host;
+      if (otherPeer && otherPeer.readyState === otherPeer.OPEN) {
+        otherPeer.send(JSON.stringify({ type: 'error', message: 'Peer disconnected.' }));
       }
       godotRooms.delete(currentRoomCode);
     }
+  });
+
+  ws.on('error', (err) => {
+    console.error(`[Godot] WebSocket error:`, err);
   });
 });
 
@@ -422,17 +457,16 @@ io.on('connection', (socket) => {
 });
 
 // --- DUAL-INTERCEPT UPGRADE ENGINE ---
-// Intercepts socket handshake requests and routes them to Socket.io or Godot's ws handler cleanly
+// Routes WebSocket upgrades: Socket.io handles its own path, Godot gets /ws/matchmaking
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-  
+
   if (pathname === '/ws/matchmaking') {
     wssGodot.handleUpgrade(request, socket, head, (ws) => {
       wssGodot.emit('connection', ws, request);
     });
-  } else {
-    return;
   }
+  // Socket.io handles its own upgrade internally — don't touch other paths
 });
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
