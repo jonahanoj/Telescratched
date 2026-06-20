@@ -23,7 +23,10 @@ const io = socketIo(server, {
 });
 
 // --- GODOT MATCHMAKING ROOMS STORE ---
-const godotRooms = new Map(); // roomCode -> { host: ws, client: ws | null }
+// Room structure:
+//   { peers: Map<peerId, ws>, nextPeerId: int, createdAt: timestamp }
+// Host is always peerId 1. Joining players get sequential IDs 2, 3, 4...
+const godotRooms = new Map();
 
 // Initialize raw WebSocket server for Godot (no bound port — handled via HTTP upgrade)
 const wssGodot = new WebSocketServer({ noServer: true });
@@ -37,19 +40,27 @@ function generateFiveLetterCode() {
   return code;
 }
 
-// Clean up stale rooms every 10 minutes
+// Clean up stale rooms every 10 minutes (max lifetime: 2 hours)
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of godotRooms.entries()) {
-    if (now - room.createdAt > 30 * 60 * 1000) { // 30 minute max lifetime
+    if (now - room.createdAt > 2 * 60 * 60 * 1000) {
       godotRooms.delete(code);
       console.log(`[Godot] Cleaned up stale room: ${code}`);
     }
   }
 }, 10 * 60 * 1000);
 
+// Helper: send JSON to a ws if it's open
+function wsSend(ws, obj) {
+  if (ws && ws.readyState === ws.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
 wssGodot.on('connection', (ws, req) => {
   let currentRoomCode = null;
+  let myPeerId = null;
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   console.log(`[Godot] New WS connection from ${clientIp}`);
 
@@ -63,64 +74,76 @@ wssGodot.on('connection', (ws, req) => {
     }
 
     switch (msg.type) {
+
       case 'create_room': {
-        // If this socket already has a room, clean up the old one first
-        if (currentRoomCode && godotRooms.has(currentRoomCode)) {
-          godotRooms.delete(currentRoomCode);
-        }
         let roomCode;
-        // Avoid (very unlikely) collisions
         do { roomCode = generateFiveLetterCode(); } while (godotRooms.has(roomCode));
 
-        godotRooms.set(roomCode, { host: ws, client: null, createdAt: Date.now() });
+        myPeerId = 1;
         currentRoomCode = roomCode;
+        godotRooms.set(roomCode, {
+          peers: new Map([[1, ws]]),  // peerId -> ws; host is always 1
+          nextPeerId: 2,
+          createdAt: Date.now()
+        });
+
         console.log(`[Godot] Room created: ${roomCode}`);
-        ws.send(JSON.stringify({ type: 'room_created', roomCode }));
+        wsSend(ws, { type: 'room_created', roomCode });
         break;
       }
 
       case 'join_room': {
         const targetCode = (msg.roomCode || '').toUpperCase();
         if (!godotRooms.has(targetCode)) {
-          return ws.send(JSON.stringify({ type: 'error', message: 'Room not found.' }));
+          return wsSend(ws, { type: 'error', message: 'Room not found.' });
         }
         const room = godotRooms.get(targetCode);
-        if (room.client) {
-          return ws.send(JSON.stringify({ type: 'error', message: 'Room is full.' }));
+        if (room.peers.size >= 10) {
+          return wsSend(ws, { type: 'error', message: 'Room is full.' });
         }
 
-        room.client = ws;
+        myPeerId = room.nextPeerId++;
         currentRoomCode = targetCode;
+        room.peers.set(myPeerId, ws);
 
-        const clientId = 2; // Host is always peer 1, client is always peer 2
-        console.log(`[Godot] Client joined room: ${targetCode} as peer ${clientId}`);
+        console.log(`[Godot] Peer ${myPeerId} joined room: ${targetCode} (${room.peers.size} total)`);
 
-        // Tell the client its peer ID (client will initiate WebRTC connection)
-        ws.send(JSON.stringify({ type: 'room_joined', peerId: clientId }));
-        // Tell the host a client joined so it can set up its side of RTC
-        room.host.send(JSON.stringify({ type: 'client_joined', peerId: clientId }));
+        // Tell the new peer its assigned ID. It will load its scene and then
+        // send client_ready to kick off WebRTC with everyone else.
+        wsSend(ws, { type: 'room_joined', peerId: myPeerId });
+        break;
+      }
+
+      case 'client_ready': {
+        // New client has loaded its game scene and is ready for WebRTC.
+        // Tell every existing peer (including the host) to open a connection TO this new peer.
+        const room = godotRooms.get(currentRoomCode);
+        if (!room) return;
+
+        for (const [existingId, existingWs] of room.peers.entries()) {
+          if (existingId !== myPeerId) {
+            // Tell the existing peer to be the offerer toward the new peer
+            wsSend(existingWs, { type: 'open_connection_to', peerId: myPeerId });
+          }
+        }
         break;
       }
 
       case 'signal': {
-        // Relay SDP offer/answer between host and client
+        // Route SDP offer/answer to the specific target peer
         const room = godotRooms.get(currentRoomCode);
         if (!room) return;
-        const target = ws === room.host ? room.client : room.host;
-        if (target && target.readyState === target.OPEN) {
-          target.send(JSON.stringify({ type: 'signal', data: msg.payload }));
-        }
+        const targetWs = room.peers.get(Number(msg.toId));
+        wsSend(targetWs, { type: 'signal', fromId: myPeerId, data: msg.payload });
         break;
       }
 
       case 'ice_candidate': {
-        // Relay ICE candidates between host and client
+        // Route ICE candidate to the specific target peer
         const room = godotRooms.get(currentRoomCode);
         if (!room) return;
-        const target = ws === room.host ? room.client : room.host;
-        if (target && target.readyState === target.OPEN) {
-          target.send(JSON.stringify({ type: 'ice_candidate', data: msg.payload }));
-        }
+        const targetWs = room.peers.get(Number(msg.toId));
+        wsSend(targetWs, { type: 'ice_candidate', fromId: myPeerId, data: msg.payload });
         break;
       }
 
@@ -130,20 +153,31 @@ wssGodot.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    console.log(`[Godot] WS connection closed (was in room: ${currentRoomCode})`);
-    if (currentRoomCode && godotRooms.has(currentRoomCode)) {
-      const room = godotRooms.get(currentRoomCode);
-      // Notify the other peer that their opponent disconnected
-      const otherPeer = ws === room.host ? room.client : room.host;
-      if (otherPeer && otherPeer.readyState === otherPeer.OPEN) {
-        otherPeer.send(JSON.stringify({ type: 'error', message: 'Peer disconnected.' }));
-      }
+    console.log(`[Godot] Peer ${myPeerId} disconnected (room: ${currentRoomCode})`);
+    if (!currentRoomCode || !godotRooms.has(currentRoomCode)) return;
+
+    const room = godotRooms.get(currentRoomCode);
+    room.peers.delete(myPeerId);
+
+    if (room.peers.size === 0) {
+      // Last one out, delete the room
       godotRooms.delete(currentRoomCode);
+      console.log(`[Godot] Room ${currentRoomCode} deleted (empty)`);
+    } else {
+      // Notify remaining peers
+      for (const peerWs of room.peers.values()) {
+        wsSend(peerWs, { type: 'peer_disconnected', peerId: myPeerId });
+      }
+      // If the host left, delete the room entirely (could also reassign, but keep it simple)
+      if (myPeerId === 1) {
+        godotRooms.delete(currentRoomCode);
+        console.log(`[Godot] Room ${currentRoomCode} deleted (host left)`);
+      }
     }
   });
 
   ws.on('error', (err) => {
-    console.error(`[Godot] WebSocket error:`, err);
+    console.error(`[Godot] WebSocket error for peer ${myPeerId}:`, err);
   });
 });
 
