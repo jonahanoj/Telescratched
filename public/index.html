@@ -31,7 +31,6 @@
       background-repeat: repeat;
       animation: diagonal-move 60s linear infinite;
       pointer-events: none;
-      /* so clicks go through to content */
     }
 
     @keyframes diagonal-move {
@@ -67,7 +66,7 @@
     }
 
     #sidebar {
-      width: 260px;
+      width: 320px;
       background-color: #855CD6;
       border-left: 1px solid #333;
       padding: 20px;
@@ -77,14 +76,11 @@
       box-shadow: -4px 0 15px rgba(0, 0, 0, 0.3);
       font-family: 'Segoe UI', Arial, sans-serif;
       transition: transform 0.4s ease;
-      /* smooth slide-in */
       transform: translateX(100%);
-      /* starts off-screen */
     }
 
     #sidebar.visible {
       transform: translateX(0);
-      /* slides in when game starts */
     }
 
     .section {
@@ -181,7 +177,6 @@
 
     #autoSaveBtn {
       background: #28a745;
-      /* normal bright green */
       color: white;
       transition: all 0.18s ease;
       cursor: pointer;
@@ -190,7 +185,6 @@
     #autoSaveBtn:disabled,
     #autoSaveBtn.save-locked {
       background: #6c9a6c !important;
-      /* muted/locked green */
       opacity: 0.7;
       cursor: not-allowed !important;
       box-shadow: none;
@@ -198,7 +192,6 @@
 
     #autoSaveBtn:hover:not(:disabled):not(.save-locked) {
       background: #218838;
-      /* darker green when enabled & hovered */
     }
 
 
@@ -243,6 +236,188 @@
       padding: 10px;
       background: #fff3cd;
       border-radius: 4px;
+    }
+
+    /* emote wheel */
+    .emote-wheel-area {
+      position: relative;
+      width: 230px;
+      margin: 24px auto 8px;
+    }
+
+    .emote-wheel {
+      position: relative;
+      width: 230px;
+      height: 230px;
+      overflow: hidden;
+      border: 5px solid #ffffff;
+      border-radius: 50%;
+      background: #222222;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+    }
+
+    .emote-wheel::before,
+    .emote-wheel::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 3;
+      width: 5px;
+      height: 250px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.85);
+      pointer-events: none;
+      transform-origin: center;
+    }
+
+    .emote-wheel::before {
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    .emote-wheel::after {
+      transform: translate(-50%, -50%) rotate(-45deg);
+    }
+
+    .emote-button {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      transition: filter 0.15s ease;
+    }
+
+    .emote-button:hover:not(:disabled) {
+      filter: brightness(1.18);
+    }
+
+    .emote-button:active {
+      filter: brightness(0.88);
+    }
+
+    /* emote colors */
+    #emoteButton1 {
+      background: #FF6200;
+      clip-path: polygon(0 0, 100% 0, 50% 50%);
+    }
+
+    #emoteButton2 {
+      background: #FF7F00;
+      clip-path: polygon(100% 0, 100% 100%, 50% 50%);
+    }
+
+    #emoteButton3 {
+      background: #FF9900;
+      clip-path: polygon(100% 100%, 0 100%, 50% 50%);
+    }
+
+    #emoteButton4 {
+      background: #FFB700;
+      clip-path: polygon(0 100%, 0 0, 50% 50%);
+    }
+
+    .emote-button img {
+      position: absolute;
+      width: 92px;
+      height: 92px;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
+      pointer-events: none;
+    }
+
+    #emoteButton1 img {
+      top: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    #emoteButton2 img {
+      top: 50%;
+      right: 2px;
+      transform: translateY(-50%);
+    }
+
+    #emoteButton3 img {
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    #emoteButton4 img {
+      top: 50%;
+      left: 2px;
+      transform: translateY(-50%);
+    }
+
+    .emote-popup-stack {
+      position: fixed;
+      right: 336px;
+      bottom: 24px;
+      z-index: 10020;
+      display: flex;
+      width: 180px;
+      flex-direction: column-reverse;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    body.clean-fullscreen-active .emote-popup-stack {
+      right: 24px;
+    }
+
+    .emote-popup {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 14px 16px 11px;
+      overflow: hidden;
+      border: 3px solid rgba(255, 255, 255, 0.9);
+      border-radius: 16px;
+      background: rgba(199, 186, 223, 0.94);
+      box-shadow: 0 7px 18px rgba(0, 0, 0, 0.3);
+      color: #ffffff;
+      animation: emote-popup-animation 3.2s ease forwards;
+    }
+
+    .emote-popup img {
+      width: 108px;
+      height: 108px;
+      object-fit: contain;
+    }
+
+    .emote-popup-name {
+      display: block;
+      width: 100%;
+      margin-top: 3px;
+      overflow: hidden;
+      font-size: 1rem;
+      font-weight: 700;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #000000;
+    }
+
+    @keyframes emote-popup-animation {
+      0% {
+        opacity: 0;
+        transform: translateX(35px) scale(0.65);
+      }
+
+      12%,
+      78% {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translateX(-18px) scale(0.85);
+      }
     }
 
     .game-header {
@@ -309,7 +484,7 @@
       background: #0056b3;
     }
 
-    /* Full-screen round end overlay */
+    /* round overlay */
     #roundEndOverlay {
       position: fixed;
       top: 0;
@@ -383,7 +558,7 @@
       background: #d18b21;
     }
 
-    /* === NEW LANDING PAGE LAYOUT === */
+    /* landing page */
     .start-container {
       display: flex;
       gap: 50px;
@@ -439,7 +614,7 @@
       color: #333;
     }
 
-    /* ====================== GAME ACTION BUTTONS ====================== */
+    /* game buttons */
     .game-action-buttons {
       display: flex;
       justify-content: center;
@@ -447,23 +622,19 @@
       gap: 25px;
       margin: 30px 0;
       flex-wrap: wrap;
-      /* stacks nicely on phones */
     }
 
     .pass-project-img {
       width: 70%;
       max-width: 340px;
-      /* EXACT same as Create/Join buttons */
       max-width: 340px;
       cursor: pointer;
       height: auto;
       transition: all 0.18s ease;
       border-radius: 12px;
-      /* optional nice rounding */
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
     }
 
-    /* Hover effect - EXACT same as your start screen buttons */
     #passProjectBtn:hover:not(.disabled),
     .pass-project-img:hover:not(.disabled) {
       transform: scale(1.04);
@@ -484,7 +655,6 @@
 
     button.save-locked {
       background: #6c9a6c !important;
-      /* muted green */
       opacity: 0.6;
       cursor: not-allowed;
     }
@@ -504,22 +674,18 @@
       background: #6c5ce7;
     }
 
-    /* === CENTERED LOBBY & SETTINGS (≈1/3 width) === */
+    /* lobby layout */
     #settingsSection,
     #waitingSection {
       max-width: 620px;
-      /* feels like 1/3 on normal screens */
       margin: 20px auto 10px;
-      /* centers it + nice breathing room */
       width: 92%;
-      /* full-ish on phones */
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
       border: 4px solid #F8A936;
       border-radius: 22px;
       background: white;
     }
 
-    /* Make the room code huge and pretty */
     #currentCode {
       font-size: 2.4em;
       font-weight: bold;
@@ -527,7 +693,6 @@
       letter-spacing: 6px;
     }
 
-    /* Center the headings too */
     #settingsSection h2,
     #waitingSection h2 {
       text-align: center;
@@ -544,8 +709,6 @@
 
     .download-btn:hover {
       background: #6c5ce7;
-      /* darker purple */
-      /* or try: #7a52b3  or #4d347a  or #9b7bd4 (lighter) */
     }
 
     .newgamebtn {
@@ -560,8 +723,6 @@
 
     .newgamebtn:hover {
       background: #6c5ce7;
-      /* darker purple */
-      /* or try: #7a52b3  or #4d347a  or #9b7bd4 (lighter) */
     }
 
     #embedArea {
@@ -580,7 +741,6 @@
       color: white;
       text-align: center;
       pointer-events: auto;
-      /* blocks clicks to the iframe */
     }
 
     #editorOverlay.show {
@@ -597,7 +757,7 @@
       text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
     }
 
-    /* === START GAME BUTTON (separate from pass project) === */
+    /* start button */
     .start-game-btn {
       width: 40%;
       max-width: 340px;
@@ -684,12 +844,12 @@
 
   <main>
     <div id="content">
-      <!-- NEW BEAUTIFUL START SCREEN -->
+      <!-- start screen -->
       <div class="start-container" id="startScreen">
-        <!-- LEFT SIDE – Create / Join (compact, not full-width) -->
+        <!-- create panel -->
         <div class="left-panel">
 
-          <!-- Tabs header -->
+          <!-- tabs -->
           <div style="display: flex; background: #00000030; border: 2px solid #ccc;">
             <button id="tab-create" class="tab-button active"
               style="flex:1; padding: 16px; font-weight: bold; background: none; border: none; cursor: pointer; font-size: 1.1em;">
@@ -701,7 +861,7 @@
             </button>
           </div>
 
-          <!-- Tab contents -->
+          <!-- tab content -->
           <div id="tab-content-create" class="tab-content" style="padding: 30px 25px; text-align: center;">
             <input type="text" id="playerName" placeholder="Your Name" required maxlength="16"
               style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 35px; display: block; margin-left: auto; margin-right: auto; background-color: #00000030;">
@@ -723,11 +883,11 @@
 
         </div>
 
-        <!-- Hidden inputs so original createRoom() and joinRoom() don't crash -->
+        <!-- legacy inputs -->
         <input type="hidden" id="hostName">
         <input type="hidden" id="joinName">
 
-        <!-- RIGHT SIDE – Two example cards with images, titles and descriptions -->
+        <!-- examples -->
         <div class="right-panel">
           <div class="example-card">
             <img src="images/example1.png" alt="Create a Foundation!">
@@ -752,8 +912,7 @@
         </div>
       </div>
 
-      <!-- === ALL YOUR ORIGINAL SECTIONS (unchanged) === -->
-      <!-- Settings (Host Only) -->
+      <!-- settings -->
       <section id="settingsSection" class="section hidden">
         <h2>Set Game Settings</h2>
         <div class="controls">
@@ -770,11 +929,10 @@
         </div>
       </section>
 
-      <!-- Waiting Room -->
+      <!-- waiting room -->
 
       <section id="waitingSection" class="section hidden">
 
-        <!-- EDIT SETTINGS BUTTON — placed exactly where you wanted (above player list) -->
         <div id="hostControls" style="text-align:center; margin:20px 0 25px 0; display:none;">
           <button id="editSettingsBtn" onclick="editSettings()">
             Edit Settings
@@ -791,7 +949,7 @@
           class="start-game-btn" style="border-radius: 999px;">
       </section>
 
-      <!-- Game Section -->
+      <!-- game -->
       <section id="gameSection" class="section hidden">
         <div class="game-header">
           <h2>Round <span id="roundNum">1</span> | Editing <span id="fromOwner">your own</span>'s project</h2>
@@ -807,7 +965,7 @@
           <div id="loadingSpinner">Loading Scratch editor...</div>
           <iframe id="scratchEmbed" allowfullscreen></iframe>
 
-          <!-- NEW GREY OVERLAY (only on the embed) -->
+          <!-- editor overlay -->
           <div id="editorOverlay">
             <div class="overlay-text">
               READY TO PASS<br>
@@ -815,23 +973,21 @@
             </div>
           </div>
         </div>
-        <!-- Add this inside the .controls div above or below #embedArea, or wherever you prefer -->
-        <!-- Game Action Buttons (Fullscreen + Pass Project) -->
+        <!-- game buttons -->
 
         <button id="cleanFullscreenBtn" class="clean-fs-btn">
           ⛶ Fullscreen (press esc to exit)
         </button>
         <div class="game-action-buttons">
-          <!-- NEW IMAGE BUTTON - exact same style/size as start screen buttons -->
           <img id="passProjectBtn" src="images/PassProjectButton.png" alt="Ready to Pass Projects"
             class="pass-project-img" style="width: 10%; max-width: 340px; border-radius: 999px;">
         </div>
       </section>
 
-      <!-- Game End Section – WITH PLAYABLE EMBEDS (2 per row) -->
+      <!-- results -->
       <section id="gameEndSection" class="section hidden">
 
-        <!-- NEW GAME BUTTON AT THE VERY TOP -->
+        <!-- new game -->
         <div style="text-align: center; margin: 40px 0;">
           <button onclick="location.reload()" class="newgamebtn">
             New Game
@@ -843,15 +999,14 @@
           Congratulations! Here's what evolved from the original projects:
         </p>
 
-        <!-- 2-COLUMN GRID OF PLAYABLE PROJECTS -->
+        <!-- project grid -->
         <div id="finalProjectsGrid"
           style="display:grid; grid-template-columns:repeat(auto-fit,minmax(520px,1fr)); gap:40px; margin:40px auto; padding:0 20px;">
         </div>
       </section>
     </div>
 
-    <!-- Sidebar (only in game) -->
-    <!-- Sidebar (only visible during the game) -->
+    <!-- game sidebar -->
     <div id="sidebar" class="hidden">
       <h3 style="margin-top:0; color:#ffffff;">Players</h3>
       <ul id="playerSidebarList" style="list-style:none; padding:0; margin:0; color: black;"></ul>
@@ -865,10 +1020,28 @@
       <div style="margin-top:20px; text-align:center; font-size:0.95em; opacity:0.9;">
         Round <span id="roundNumSidebar">1</span> / <span id="maxRounds">4</span>
       </div>
+
+      <!-- emote wheel -->
+      <div class="emote-wheel-area">
+        <h3 style="margin:0 0 10px; color:#ffffff; text-align:center;">Reactions</h3>
+        <div class="emote-wheel" aria-label="Emote wheel">
+          <button id="emoteButton1" class="emote-button" type="button" onclick="sendEmote(1)"
+            aria-label="Send emote 1"><img src="images/emote1.png" alt=""></button>
+          <button id="emoteButton2" class="emote-button" type="button" onclick="sendEmote(2)"
+            aria-label="Send emote 2"><img src="images/emote2.png" alt=""></button>
+          <button id="emoteButton3" class="emote-button" type="button" onclick="sendEmote(3)"
+            aria-label="Send emote 3"><img src="images/emote3.png" alt=""></button>
+          <button id="emoteButton4" class="emote-button" type="button" onclick="sendEmote(4)"
+            aria-label="Send emote 4"><img src="images/emote4.png" alt=""></button>
+        </div>
+      </div>
     </div>
   </main>
 
-  <!-- Full-screen round end overlay -->
+  <!-- emote popups -->
+  <div id="emotePopupStack" class="emote-popup-stack" aria-live="polite"></div>
+
+  <!-- round overlay -->
   <div id="roundEndOverlay">
     <div>
       <p id="countdownText">Wrapping up round...</p>
@@ -888,20 +1061,19 @@
     let timerInterval = null;
     let roundStartTime = null;
     let myIndex = -1;
-    let lockedMyIndex = undefined;  // New: Lock index post-startup to prevent races
+    let lockedMyIndex = undefined;
     let myUploaded = false;
     let pendingUploadDataURL = null;
     let agreements = [];
-    let finalProjects = [];  // Store final state for end screen
-    let nameUpdateTimeout = null;  // Debounce for name updates
-    let beepAudio = null;  // New: Preload beep sound
-    let prevSecond = null;  // New: Track previous second for beeps
-    let isTimeoutActive = false;  // New: Flag to track if timeout grace is ongoing (for error suppression)
-    let hasAgreedThisRound = false;  // NEW: Once true, cannot save again
+    let finalProjects = [];
+    let nameUpdateTimeout = null;
+    let beepAudio = null;
+    let prevSecond = null;
+    let isTimeoutActive = false;
+    let hasAgreedThisRound = false;
     let currentReadyState = false;
-    // Listen for Escape forwarded from inside the iframe
+    // iframe escape
     window.addEventListener('message', function (event) {
-      // Only accept messages from our own site
       if (event.origin !== window.location.origin) return;
 
       if (event.data && event.data.type === 'escapePressed' && isCleanFs) {
@@ -909,22 +1081,20 @@
       }
     });
 
-    // Socket.IO error handling (warn only)
+    // socket errors
     socket.on('connect_error', (err) => console.warn('Connection error:', err.message));
     socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
 
-    // === RELIABILITY: Auto-rejoin on hiccups ===
-    // === RELIABILITY: Smart Auto-Rejoin (fixes all random errors) ===
+    // auto rejoin
     let lastRejoinAttempt = 0;
 
     function attemptSmartRejoin() {
       const now = Date.now();
-      if (now - lastRejoinAttempt < 1800) return;   // debounce
+      if (now - lastRejoinAttempt < 1800) return;
       lastRejoinAttempt = now;
 
       if (!currentRoom || !myName) return;
 
-      // Only try rejoin if the user is actually looking at the game or waiting room
       const gameVisible = !document.getElementById('gameSection').classList.contains('hidden');
       const waitingVisible = !document.getElementById('waitingSection').classList.contains('hidden');
       const isInSession = gameVisible || waitingVisible;
@@ -945,7 +1115,7 @@
       attemptSmartRejoin();
     });
 
-    // Safe DOM update
+    // safe update
     function safeUpdate(id, fn) {
       const el = document.getElementById(id);
       if (el) fn(el);
@@ -971,17 +1141,11 @@
           filename
         });
 
-        // ────────────────────────────────────────────────
-        // No artificial wait here anymore
-        // The upload is sent immediately.
-        // We'll rely on 'uploadSuccess' event to confirm + update UI
-        // ────────────────────────────────────────────────
-
         safeUpdate('fileStatus', el =>
           el.textContent = `Final save sent as "${filename}" — uploading now...`
         );
 
-        confirmUpload(filename);  // optimistic update (we already called it in original too)
+        confirmUpload(filename);
 
         return true;
       } catch (err) {
@@ -1018,7 +1182,6 @@
 
         el.classList.toggle('disabled', shouldDisable);
 
-        // Only show for the host
         el.style.display = isHost ? 'block' : 'none';
       });
     }
@@ -1030,7 +1193,6 @@
       const updateDisplay = () => {
         if (!roundStartTime || !gameSettings.timer) return;
 
-        // Calculate how much time has passed since the server started the round
         const now = Date.now();
         const elapsed = now - roundStartTime;
         let remainingMs = gameSettings.timer - elapsed;
@@ -1044,7 +1206,7 @@
         safeUpdate('timeLeft', el => el.textContent = timeString);
         safeUpdate('sidebarTimer', el => el.textContent = timeString);
 
-        // Beep logic for the last 10 seconds
+        // timer beeps
         const currentSecond = Math.floor(remainingMs / 1000);
         if (remainingMs <= 10000 && remainingMs > 0 && currentSecond !== prevSecond && beepAudio) {
           beepAudio.currentTime = 0;
@@ -1061,6 +1223,17 @@
       timerInterval = setInterval(updateDisplay, 1000);
     }
 
+    function pauseRoundTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      if (beepAudio) {
+        beepAudio.pause();
+        beepAudio.currentTime = 0;
+      }
+    }
+
     function resetRoundUI() {
       myUploaded = false;
       pendingUploadDataURL = null;
@@ -1071,7 +1244,6 @@
       updateReadyButton();
       isTimeoutActive = false;
 
-      // Enable Pass Project button for new round
       safeUpdate('passProjectBtn', el => {
         el.classList.remove('disabled');
       });
@@ -1104,7 +1276,7 @@
       myUploaded = false;
     }
 
-    // Updated: Debounced project name update: local only, sync to VM
+    // project names
     function updateProjectName() {
       if (nameUpdateTimeout) clearTimeout(nameUpdateTimeout);
       nameUpdateTimeout = setTimeout(() => {
@@ -1117,7 +1289,7 @@
             window.location.origin
           );
         }
-      }, 500);  // 500ms debounce
+      }, 500);
     }
 
     async function saveFromEditor() {
@@ -1127,7 +1299,7 @@
       }
       const tw = embed.contentWindow;
       let attempts = 0;
-      while (attempts < 10 && !tw.vm) {  // Poll up to 10s
+      while (attempts < 10 && !tw.vm) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         attempts++;
       }
@@ -1139,7 +1311,6 @@
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = reader.result.split(',')[1];
-          // Use external input for filename, not VM
           const input = document.getElementById('projectNameInput');
           const filename = input ? `${input.value.trim() || 'Untitled'}.sb3` : 'project.sb3';
           resolve({ base64, filename });
@@ -1153,12 +1324,10 @@
       const btn = document.getElementById('autoSaveBtn');
       if (!btn) return;
 
-      // Start 10-second cooldown
       btn.disabled = true;
       btn.classList.add('save-locked');
       btn.textContent = "Saving Locked – 10 Second Cooldown!";
 
-      // Re-enable after 10 seconds (unless already agreed to pass)
       setTimeout(() => {
         if (!hasAgreedThisRound) {
           btn.disabled = false;
@@ -1167,17 +1336,14 @@
         }
       }, 10000);
 
-      // Actual save/upload logic
       saveFromEditor()
         .then(({ base64, filename }) => {
           socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
 
-          // Optimistic UI update
           safeUpdate('fileStatus', el =>
             el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
           );
 
-          // Re-enable save button (unless agreed) and enable Pass Project button
           if (!hasAgreedThisRound) {
             safeUpdate('autoSaveBtn', el => {
               el.disabled = false;
@@ -1194,7 +1360,6 @@
             el.textContent = `Save failed: ${err.message}. Button will re-enable in 10s…`
           );
 
-          // Still respect the cooldown even on error
           setTimeout(() => {
             if (!hasAgreedThisRound) {
               safeUpdate('autoSaveBtn', el => {
@@ -1222,10 +1387,36 @@
       });
     }
 
-    let canSave = false;           // ← NEW: tracks if saving is allowed
-    let saveCooldownTimeout = null; // ← keeps track of the 4-second timer
+    function sendEmote(emoteNumber) {
+      const gameVisible = !document.getElementById('gameSection').classList.contains('hidden');
+      if (!gameVisible || !currentRoom) return;
+      socket.emit('sendEmote', { code: currentRoom, emote: emoteNumber });
+    }
 
-    // Call this whenever a new round starts (or game starts)
+    function showEmotePopup(name, emoteNumber) {
+      const stack = document.getElementById('emotePopupStack');
+      if (!stack) return;
+
+      const popup = document.createElement('div');
+      popup.className = 'emote-popup';
+
+      const image = document.createElement('img');
+      image.src = `images/emote${emoteNumber}.png`;
+      image.alt = `Emote from ${name}`;
+
+      const senderName = document.createElement('span');
+      senderName.className = 'emote-popup-name';
+      senderName.textContent = name;
+
+      popup.append(image, senderName);
+      stack.appendChild(popup);
+      setTimeout(() => popup.remove(), 3200);
+    }
+
+    let canSave = false;
+    let saveCooldownTimeout = null;
+
+    // save cooldown
     function enableSaveAfterDelay() {
       canSave = false;
       safeUpdate('autoSaveBtn', el => {
@@ -1240,7 +1431,7 @@
           el.disabled = false;
           el.textContent = hasAgreedThisRound ? 'Saving Locked' : 'Save Project';
         });
-      }, 10000); // 4 seconds
+      }, 10000);
     }
 
     function showGameEnd(finalData) {
@@ -1250,12 +1441,9 @@
         index: idx
       }));
 
-      // Show end screen
       document.getElementById('gameSection').classList.add('hidden');
       document.getElementById('sidebar').style.display = 'none';
       document.getElementById('gameEndSection').classList.remove('hidden');
-      // Activate full-screen end mode
-
       const grid = document.getElementById('finalProjectsGrid');
       const origin = window.location.origin;
 
@@ -1263,12 +1451,11 @@
         const projectUrl = `${origin}/final-download/${currentRoom}/${p.index}`;
         const cleanName = p.filename.replace(/\.sb3$/i, '');
 
-        // THIS IS THE KEY: Use editor.html + project_url + your addon — exactly like in-game
         const embedUrl = `/turbowarp/fullscreen.html?project_url=${encodeURIComponent(projectUrl)}&addons=${encodeURIComponent(origin + '/addon.js')}`;
 
         return `
       <div style="background:white; border-radius:18px; overflow:hidden; box-shadow:0 15px 45px rgba(0,0,0,0.22);">
-        <!-- Playable project - loads automatically just like during the game -->
+        <!-- project -->
         <div style="position:relative; padding-top:62.5%; background:#f0f0f0;">
           <iframe src="${embedUrl}"
                   allowfullscreen
@@ -1277,7 +1464,7 @@
           </iframe>
         </div>
 
-        <!-- Info + Download -->
+        <!-- project info -->
         <div style="padding:24px; text-align:center; background:#f9f9fa;">
           <h3 style="margin:0 0 8px; font-size:1.5em; color:#333;">
             ${p.owner}'s Final Project
@@ -1294,7 +1481,6 @@
     `;
       }).join('');
 
-      // Optional: Set project name inside each embed (like in-game)
       setTimeout(() => {
         document.querySelectorAll('#finalProjectsGrid iframe').forEach((iframe, i) => {
           iframe.onload = () => {
@@ -1305,13 +1491,13 @@
       }, 1500);
     }
 
-    // Updated: Handle round ending countdown (5s, during grace; no lock overlay needed)
+    // round countdown
     function startRoundCountdown() {
-      console.log('Starting 5-4-3-2-1 countdown');  // Debug: Check if triggered
+      console.log('Starting 5-4-3-2-1 countdown');
       const overlay = document.getElementById('roundEndOverlay');
       const textEl = document.getElementById('countdownText');
       const display = document.getElementById('countdownDisplay');
-      textEl.textContent = 'Wrapping up round...';  // Unified text for both paths
+      textEl.textContent = 'Wrapping up round...';
       overlay.style.display = 'flex';
       let count = 10;
       display.textContent = count;
@@ -1326,35 +1512,27 @@
       }, 1000);
     }
 
-    // Socket events (safe)
     socket.on('roomCreated', (data) => {
       hideStartScreen();
       currentRoom = data.code;
 
-      // 1. Get name from the main input field
       myName = document.getElementById('playerName').value.trim();
 
-      // 2. Explicitly set host status so the UI shows kick buttons
       isHost = true;
 
-      // 3. Sync room settings and current player list
       gameSettings = data.settings;
       settingsSaved = data.confirmed;
       players = data.players;
       myIndex = players.indexOf(myName);
 
-      // 4. Update UI sections
       safeUpdate('currentCode', el => el.textContent = data.code);
       safeUpdate('settingsSection', el => el.classList.remove('hidden'));
       safeUpdate('waitingSection', el => el.classList.remove('hidden'));
 
-      // 5. Render the player list with host-only buttons
       updatePlayers(players);
 
-      // 6. Refresh the "Start Game" button state
       updateStartBtn();
 
-      // 7. Lock the lobby inputs and show host-only edit controls
       lockLobby();
       updateHostControls();
     });
@@ -1374,17 +1552,15 @@
       safeUpdate('currentCode', el => el.textContent = data.code);
       if (isHost) safeUpdate('settingsSection', el => el.classList.remove('hidden'));
       updatePlayers(players);
-      updateStartBtn();  // Ensure button state on join
+      updateStartBtn();
       lockLobby();
-      updateHostControls();   // ← ADD THIS LINE
+      updateHostControls();
     });
 
-    // FIND THIS AROUND LINE 1142 AND REPLACE IT:
     socket.on('playerListUpdate', (pList) => {
       players = pList;
       myIndex = myName ? players.indexOf(myName) : -1;
 
-      // Call the function that actually builds the buttons
       updatePlayers(players);
 
       updateStartBtn();
@@ -1399,13 +1575,13 @@
       safeUpdate('timer', el => el.value = Math.ceil(data.settings.timer / 60000));
       safeUpdate('maxPlayers', el => el.value = data.settings.maxPlayers);
       updateStartBtn();
-      updateHostControls();   // ← ADD THIS LINE
+      updateHostControls();
     });
 
     socket.on('gameStarted', (data) => {
       players = data.players;
       myIndex = players.indexOf(myName);
-      lockedMyIndex = myIndex;  // New: Lock index immediately on game start
+      lockedMyIndex = myIndex;
       safeUpdate('waitingSection', el => el.classList.add('hidden'));
       safeUpdate('settingsSection', el => el.classList.add('hidden'));
       safeUpdate('gameSection', el => el.classList.remove('hidden'));
@@ -1429,16 +1605,13 @@
         embed.onload = () => {
           safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
-          // Your existing project name code
           const tw = embed.contentWindow;
           if (tw && tw.vm && data.projects[myIndex].filename) {
             const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
             tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
           }
 
-          // ────────────────────────────────────────────────
-          // NEW: Inject Escape key forwarder into the iframe
-          // ────────────────────────────────────────────────
+          // iframe escape
           try {
             const iframeWin = embed.contentWindow;
             const iframeDoc = embed.contentDocument || iframeWin?.document;
@@ -1446,26 +1619,19 @@
             if (iframeDoc && iframeWin) {
               const handleEsc = function (e) {
                 if (e.key === 'Escape' || e.key === 'Esc') {
-                  // Forward to parent
                   window.parent.postMessage(
                     { type: 'escapePressed' },
                     window.location.origin
                   );
-                  // Optional: uncomment to also block browser fullscreen exit
-                  // e.preventDefault();
-                  // e.stopPropagation();
                 }
               };
 
-              // Attach to document (main place most key events go)
-              iframeDoc.addEventListener('keydown', handleEsc, true); // true = capture phase
+              iframeDoc.addEventListener('keydown', handleEsc, true);
 
-              // Also attach directly to window as extra safety
               iframeWin.addEventListener('keydown', handleEsc, true);
             }
           } catch (err) {
             console.warn("Could not add Esc listener inside iframe:", err);
-            // The corner exit button is still there as backup
           }
         };
       }
@@ -1483,7 +1649,7 @@
     socket.on('roundAdvanced', (data) => {
       players = data.players;
       myIndex = players.indexOf(myName);
-      lockedMyIndex = myIndex;  // New: Re-lock on round advance (in case of any drift)
+      lockedMyIndex = myIndex;
       safeUpdate('roundNum', el => el.textContent = data.round);
       safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
       updateGameState(data);
@@ -1503,16 +1669,13 @@
         embed.onload = () => {
           safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
-          // Your existing project name code
           const tw = embed.contentWindow;
           if (tw && tw.vm && data.projects[myIndex].filename) {
             const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
             tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
           }
 
-          // ────────────────────────────────────────────────
-          // NEW: Inject Escape key forwarder into the iframe
-          // ────────────────────────────────────────────────
+          // iframe escape
           try {
             const iframeWin = embed.contentWindow;
             const iframeDoc = embed.contentDocument || iframeWin?.document;
@@ -1520,26 +1683,19 @@
             if (iframeDoc && iframeWin) {
               const handleEsc = function (e) {
                 if (e.key === 'Escape' || e.key === 'Esc') {
-                  // Forward to parent
                   window.parent.postMessage(
                     { type: 'escapePressed' },
                     window.location.origin
                   );
-                  // Optional: uncomment to also block browser fullscreen exit
-                  // e.preventDefault();
-                  // e.stopPropagation();
                 }
               };
 
-              // Attach to document (main place most key events go)
-              iframeDoc.addEventListener('keydown', handleEsc, true); // true = capture phase
+              iframeDoc.addEventListener('keydown', handleEsc, true);
 
-              // Also attach directly to window as extra safety
               iframeWin.addEventListener('keydown', handleEsc, true);
             }
           } catch (err) {
             console.warn("Could not add Esc listener inside iframe:", err);
-            // The corner exit button is still there as backup
           }
         };
       }
@@ -1560,7 +1716,6 @@
 
       updatePlayerSidebar();
 
-      // Handle your own upload confirmation ONLY (UI stuff, no reload)
       const selfUploadStatus = data.uploaded.find(u => u.player === myName);
       if (selfUploadStatus && selfUploadStatus.uploaded) {
         if (!myUploaded) confirmUpload(myProj.filename || 'project.sb3');
@@ -1568,7 +1723,6 @@
         revertLocalUpload();
       }
 
-      // Update project name input
       if (myProj.filename) {
         const cleanName = myProj.filename.replace('.sb3', '');
         safeUpdate('projectNameInput', el => {
@@ -1577,8 +1731,6 @@
           el.onblur = updateProjectName;
         });
       }
-
-      // IMPORTANT: NO iframe reload here! Uploads from others do NOTHING to the editor
     }
 
     socket.on('playerUploaded', (data) => {
@@ -1602,20 +1754,23 @@
       updatePlayerSidebar();
     });
 
-    // Updated: Set flag for grace/error suppression, but no lock overlay
+    socket.on('emoteReceived', ({ name, emote }) => {
+      showEmotePopup(name, emote);
+    });
+
+    // round timeout
     socket.on('roundTimeout', () => {
-      isTimeoutActive = true;  // Set flag for grace period error suppression
+      isTimeoutActive = true;
       safeUpdate('timeLeft', el => el.textContent = '0:00');
       safeUpdate('sidebarTimer', el => el.textContent = '0:00');
       safeUpdate('fileStatus', el => el.textContent = "Time's up! Auto-saving and locking editor.");
-      safeUpdate('projectNameInput', el => el.disabled = true);  // Lock naming on timeout
-      // Clear flag after 5s grace (matches server)
+      safeUpdate('projectNameInput', el => el.disabled = true);
       setTimeout(() => { isTimeoutActive = false; }, 5000);
     });
 
-    // Dedicated auto-save trigger (no duplicate risk now)
+    // forced save
     socket.on('autoSaveNow', async () => {
-      if (hasAgreedThisRound || myUploaded) return;  // already handled
+      if (hasAgreedThisRound || myUploaded) return;
 
       safeUpdate('fileStatus', el =>
         el.textContent = "Time's up! Forcing final save now..."
@@ -1626,7 +1781,7 @@
 
     socket.on('gameEnd', (data) => {
       if (timerInterval) clearInterval(timerInterval);
-      isTimeoutActive = false;  // Reset on game end
+      isTimeoutActive = false;
       showGameEnd(data);
       document.getElementById('sidebar').classList.remove('visible');
       document.getElementById('sidebar').classList.add('hidden');
@@ -1636,59 +1791,47 @@
     socket.on('rejoinedGame', (data) => {
       console.log('✅ Successfully rejoined game');
 
-      // 1. Update local state
       players = data.players;
       myIndex = data.myIndex;
-      // Ensure we use the most up-to-date room/name from local storage
       currentRoom = localStorage.getItem('telescratched_code') || currentRoom;
       myName = localStorage.getItem('telescratched_name') || myName;
 
-      // 2. Fix UI visibility
-      document.querySelector('header').classList.add('hidden'); // Hides the top logo
-      hideStartScreen(); // Hides the Create/Join panels
+      document.querySelector('header').classList.add('hidden');
+      hideStartScreen();
 
-      // 3. Show Game Sections
       document.getElementById('gameSection').classList.remove('hidden');
       document.getElementById('sidebar').classList.remove('hidden');
       document.getElementById('sidebar').classList.add('visible');
 
-      // 4. Reload the Scratch Editor
       const embed = document.getElementById('scratchEmbed');
       const origin = window.location.origin;
       const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
 
-      // Show the spinner before setting the source
       safeUpdate('loadingSpinner', el => el.style.display = 'block');
       embed.src = newUrl;
 
       embed.onload = () => {
-        // 5. Hide spinner ONLY when the iframe is actually ready
         safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
-        // Sync project name to the VM inside the iframe
         if (embed.contentWindow && data.projects[myIndex].filename) {
           const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
           embed.contentWindow.postMessage({ type: 'setProjectName', name: cleanName }, origin);
         }
       };
 
-      // 6. Final Sync & Start Loops
       updateGameState(data);
       updateTimer(data.roundStartTime);
 
-      // Start the 30-second background save loop
       startAutoBackup();
 
-      // Update sidebar info
       safeUpdate('roundNumSidebar', el => el.textContent = data.round);
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds);
     });
 
-    // Updated: Suppress more errors during timeout grace (now includes "Already uploaded")
     socket.on('error', (msg) => {
       const timeoutErrors = ['Round not active.', 'Already uploaded this round.'];
       if (isTimeoutActive && timeoutErrors.includes(msg) && !myUploaded) {
-        console.warn('Suppressed timeout error:', msg);  // Log but no alert
+        console.warn('Suppressed timeout error:', msg);
         return;
       }
       if (pendingUploadDataURL) revertLocalUpload();
@@ -1698,13 +1841,14 @@
 
     socket.on('roundEnding', async () => {
       console.log('Round ending — performing final save during 10s grace period');
+      pauseRoundTimer();
 
       safeUpdate('fileStatus', el =>
         el.textContent = "Round ending — saving your final project now..."
       );
 
       try {
-        await performFinalSave();   // ← ONLY happens here, during the safe 10s window
+        await performFinalSave();
       } catch (err) {
         console.error("Final save failed:", err);
         safeUpdate('fileStatus', el =>
@@ -1713,7 +1857,7 @@
       }
 
       if (isCleanFs) exitCleanFullscreen();
-      startRoundCountdown();   // your existing countdown
+      startRoundCountdown();
     });
 
     function createRoom() {
@@ -1727,7 +1871,6 @@
       let timer = parseInt(document.getElementById('timer').value) || 10;
       let maxP = parseInt(document.getElementById('maxPlayers').value) || 4;
 
-      // Clamp everything client-side
       cycles = Math.max(1, Math.min(10, cycles));
       timer = Math.max(1, Math.min(120, timer));
       maxP = Math.max(2, Math.min(10, maxP));
@@ -1745,14 +1888,11 @@
     function editSettings() {
       if (!isHost) return;
 
-      // Pre-fill with current values
       document.getElementById('cycles').value = gameSettings.cycles || 1;
       document.getElementById('timer').value = Math.ceil((gameSettings.timer || 300000) / 60000);
       document.getElementById('maxPlayers').value = gameSettings.maxPlayers || 4;
 
-      // Show the settings form again
       document.getElementById('settingsSection').classList.remove('hidden');
-      // Hide the edit button while they're editing
       document.getElementById('hostControls').style.display = 'none';
     }
 
@@ -1763,7 +1903,6 @@
       }
     }
 
-    // UPDATED saveSettings() — just add the last two lines
     function saveSettings() {
       let cycles = parseInt(document.getElementById('cycles').value) || 1;
       let timer = parseInt(document.getElementById('timer').value) || 10;
@@ -1781,7 +1920,6 @@
 
       socket.emit('setSettings', { code: currentRoom, settings });
 
-      // Hide settings form and show Edit button in waiting room
       document.getElementById('settingsSection').classList.add('hidden');
       updateHostControls();
     }
@@ -1803,7 +1941,7 @@
       const list = document.getElementById('playersList');
       if (!list) return;
 
-      list.innerHTML = ''; // Clear old names
+      list.innerHTML = '';
 
       players.forEach((p, index) => {
         const li = document.createElement('li');
@@ -1820,7 +1958,6 @@
         nameSpan.textContent = p;
         li.appendChild(nameSpan);
 
-        // Only show X for the host, and never on the host's own name (index 0)
         if (isHost && index !== 0) {
           const kickBtn = document.createElement('button');
           kickBtn.textContent = 'X';
@@ -1840,17 +1977,15 @@
       });
     }
 
-    // The actual kick logic to send to server
     function kickPlayer(targetName) {
       if (confirm(`Are you sure you want to kick ${targetName}?`)) {
         socket.emit('kickPlayer', { code: currentRoom, targetName });
       }
     }
 
-    // Handle being kicked
     socket.on('kicked', () => {
       alert('You have been kicked from the room.');
-      location.reload(); // Send them back to the start screen
+      location.reload();
     });
 
     function hideStartScreen() {
@@ -1858,11 +1993,9 @@
       if (el) el.style.display = 'none';
     }
 
-    // ────────────────────────────────────────────────
-    // Clean Fullscreen: hide everything except the editor + corner exit button
-    // ────────────────────────────────────────────────
+    // fullscreen
     const cleanFsBtn = document.getElementById('cleanFullscreenBtn');
-    const exitCleanFsBtn = document.getElementById('exitCleanFsBtn');      // your old exit button (optional)
+    const exitCleanFsBtn = document.getElementById('exitCleanFsBtn');
     const exitCornerBtn = document.getElementById('exitCleanFsCornerBtn');
     const embedArea = document.getElementById('embedArea');
     const gameSection = document.getElementById('gameSection');
@@ -1875,8 +2008,8 @@
     function enterCleanFullscreen() {
       if (isCleanFs) return;
       isCleanFs = true;
+      body.classList.add('clean-fullscreen-active');
 
-      // Hide page elements
       if (sidebar) sidebar.style.display = 'none';
       if (header) header.style.display = 'none';
       if (gameSection) {
@@ -1886,7 +2019,6 @@
         toHide.forEach(el => el.style.display = 'none');
       }
 
-      // Make embed fill screen
       if (embedArea) {
         embedArea.style.position = 'fixed';
         embedArea.style.inset = '0';
@@ -1900,21 +2032,19 @@
 
       body.style.overflow = 'hidden';
 
-      // Show corner exit button
       if (exitCornerBtn) {
         exitCornerBtn.style.display = 'block';
       }
 
-      // Hide the "enter" button if you have one visible
       if (cleanFsBtn) cleanFsBtn.style.display = 'none';
-      if (exitCleanFsBtn) exitCleanFsBtn.style.display = 'none'; // hide old one if exists
+      if (exitCleanFsBtn) exitCleanFsBtn.style.display = 'none';
     }
 
     function exitCleanFullscreen() {
       if (!isCleanFs) return;
       isCleanFs = false;
+      body.classList.remove('clean-fullscreen-active');
 
-      // Restore visibility
       if (sidebar) sidebar.style.display = '';
       if (header) header.style.display = '';
 
@@ -1925,12 +2055,11 @@
         toShow.forEach(el => el.style.display = '');
       }
 
-      // Reset embed
       if (embedArea) {
         embedArea.style.position = '';
         embedArea.style.inset = '';
         embedArea.style.zIndex = '';
-        embedArea.style.height = '';    // or set back to your original value e.g. '60vh'
+        embedArea.style.height = '';
         embedArea.style.width = '';
         embedArea.style.margin = '';
         embedArea.style.padding = '';
@@ -1939,16 +2068,13 @@
 
       body.style.overflow = '';
 
-      // Hide corner exit button
       if (exitCornerBtn) {
         exitCornerBtn.style.display = 'none';
       }
 
-      // Show enter button again
       if (cleanFsBtn) cleanFsBtn.style.display = 'inline-block';
     }
 
-    // Connect buttons
     if (cleanFsBtn) {
       cleanFsBtn.addEventListener('click', enterCleanFullscreen);
     }
@@ -1957,22 +2083,20 @@
       exitCornerBtn.addEventListener('click', exitCleanFullscreen);
     }
 
-    // Optional: also allow Esc key to exit
     document.addEventListener('keydown', e => {
       if (isCleanFs && e.key === 'Escape') {
         exitCleanFullscreen();
       }
     });
 
-    // Connect image buttons to the existing functions
     document.getElementById('createImageBtn').addEventListener('click', () => {
       const name = document.getElementById('playerName').value.trim();
       if (!name) {
         alert('Please enter your name');
         return;
       }
-      document.getElementById('hostName').value = name;     // fill hidden field
-      createRoom();                                         // ← your original function
+      document.getElementById('hostName').value = name;
+      createRoom();
     });
 
     document.getElementById('joinImageBtn').addEventListener('click', () => {
@@ -1982,7 +2106,6 @@
       if (!name) return alert('Please enter your name');
       if (!code) return alert('Please enter the room code');
 
-      // ADD THIS: Save to local storage for easy rejoining after a refresh
       localStorage.setItem('telescratched_name', name);
       localStorage.setItem('telescratched_code', code);
 
@@ -1990,7 +2113,7 @@
       joinRoom();
     });
 
-    // Tab switching
+    // tabs
     const tabCreate = document.getElementById('tab-create');
     const tabJoin = document.getElementById('tab-join');
     const contentCreate = document.getElementById('tab-content-create');
@@ -2013,12 +2136,9 @@
     tabCreate.addEventListener('click', showCreate);
     tabJoin.addEventListener('click', showJoin);
 
-    // Optional: start on Create tab
     showCreate();
-    // ====================== PASS PROJECT BUTTON ======================
     document.getElementById('passProjectBtn').addEventListener('click', toggleReady);
 
-    // Sync the two playerName fields whenever one changes
     const nameInputs = document.querySelectorAll('#tab-content-create #playerName, #tab-content-join #playerName');
 
     nameInputs.forEach(input => {
@@ -2030,7 +2150,7 @@
       });
     });
 
-    // === REAL-TIME LIMIT FOR MAX PLAYERS (fixes typing 20+) ===
+    // input limits
     const maxPlayersInput = document.getElementById('maxPlayers');
     if (maxPlayersInput) {
       function clampMaxPlayers() {
@@ -2039,12 +2159,11 @@
         else if (val > 10) maxPlayersInput.value = 10;
       }
 
-      maxPlayersInput.addEventListener('input', clampMaxPlayers);   // as you type
-      maxPlayersInput.addEventListener('change', clampMaxPlayers);  // when you leave the box
-      maxPlayersInput.addEventListener('blur', clampMaxPlayers);    // extra safety
+      maxPlayersInput.addEventListener('input', clampMaxPlayers);
+      maxPlayersInput.addEventListener('change', clampMaxPlayers);
+      maxPlayersInput.addEventListener('blur', clampMaxPlayers);
     }
 
-    // === LIMITS FOR CYCLES & TIMER (fixes typing huge numbers) ===
     const cyclesInput = document.getElementById('cycles');
     const timerInput = document.getElementById('timer');
 
@@ -2061,7 +2180,6 @@
       }
     }
 
-    // Apply clamping as you type or leave the field
     [cyclesInput, timerInput].forEach(input => {
       if (input) {
         input.addEventListener('input', clampSettingsInputs);
@@ -2074,7 +2192,6 @@
       const savedName = localStorage.getItem('telescratched_name');
       const savedCode = localStorage.getItem('telescratched_code');
       if (savedName) {
-        // Fill all name inputs (create and join tabs)
         const nameInputs = document.querySelectorAll('#playerName');
         nameInputs.forEach(input => input.value = savedName);
       }
@@ -2118,14 +2235,13 @@
       setReady(!currentReadyState);
     }
 
-    // Inside index.html, near your other interval logic
+    // auto backup
     let backupSaveInterval = null;
 
     function startAutoBackup() {
       if (backupSaveInterval) clearInterval(backupSaveInterval);
 
       backupSaveInterval = setInterval(() => {
-        // Only auto-backup if we are in the game, the editor is active, and we haven't already "passed"
         const isGameVisible = !document.getElementById('gameSection').classList.contains('hidden');
         if (isGameVisible && !hasAgreedThisRound && !isTimeoutActive) {
           console.log("Running 30-second background backup...");
@@ -2136,17 +2252,12 @@
             })
             .catch(err => console.warn("Background backup skipped:", err));
         }
-      }, 30000); // 30 seconds
+      }, 30000);
     }
 
-    // Call startAutoBackup() inside your socket.on('gameStarted') 
-    // and socket.on('rejoinedGame') handlers.
-
-    // Trigger an emergency save if the user refreshes or closes the tab
+    // exit save
     window.onbeforeunload = function () {
       if (currentRoom && !document.getElementById('gameSection').classList.contains('hidden')) {
-        // We can't wait for a full upload here, but we can trigger one
-        // and hope the socket stays open for the half-second it takes.
         const embed = document.getElementById('scratchEmbed');
         if (embed && embed.contentWindow) {
           saveFromEditor().then(({ base64, filename }) => {

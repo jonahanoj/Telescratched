@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const http = require('http');
 const socketIo = require('socket.io');
-const { WebSocketServer } = require('ws');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -11,174 +10,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 
-// Existing Socket.io Setup for the Web Game
 const io = socketIo(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  maxHttpBufferSize: 10e6,   // 10MB for .sb3 uploads
+  maxHttpBufferSize: 10e6,   // upload limit
   pingTimeout: 60000,
   pingInterval: 25000
-});
-
-// --- GODOT MATCHMAKING ROOMS STORE ---
-// Room structure:
-//   { peers: Map<peerId, ws>, nextPeerId: int, createdAt: timestamp }
-// Host is always peerId 1. Joining players get sequential IDs 2, 3, 4...
-const godotRooms = new Map();
-
-// Initialize raw WebSocket server for Godot (no bound port — handled via HTTP upgrade)
-const wssGodot = new WebSocketServer({ noServer: true });
-
-function generateFiveLetterCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 5; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
-
-// Clean up stale rooms every 10 minutes (max lifetime: 2 hours)
-setInterval(() => {
-  const now = Date.now();
-  for (const [code, room] of godotRooms.entries()) {
-    if (now - room.createdAt > 2 * 60 * 60 * 1000) {
-      godotRooms.delete(code);
-      console.log(`[Godot] Cleaned up stale room: ${code}`);
-    }
-  }
-}, 10 * 60 * 1000);
-
-// Helper: send JSON to a ws if it's open
-function wsSend(ws, obj) {
-  if (ws && ws.readyState === ws.OPEN) {
-    ws.send(JSON.stringify(obj));
-  }
-}
-
-wssGodot.on('connection', (ws, req) => {
-  let currentRoomCode = null;
-  let myPeerId = null;
-  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  console.log(`[Godot] New WS connection from ${clientIp}`);
-
-  ws.on('message', (message) => {
-    let msg;
-    try {
-      msg = JSON.parse(message);
-    } catch (e) {
-      console.error('[Godot] Failed to parse message:', e);
-      return;
-    }
-
-    switch (msg.type) {
-
-      case 'create_room': {
-        let roomCode;
-        do { roomCode = generateFiveLetterCode(); } while (godotRooms.has(roomCode));
-
-        myPeerId = 1;
-        currentRoomCode = roomCode;
-        godotRooms.set(roomCode, {
-          peers: new Map([[1, ws]]),  // peerId -> ws; host is always 1
-          nextPeerId: 2,
-          createdAt: Date.now()
-        });
-
-        console.log(`[Godot] Room created: ${roomCode}`);
-        wsSend(ws, { type: 'room_created', roomCode });
-        break;
-      }
-
-      case 'join_room': {
-        const targetCode = (msg.roomCode || '').toUpperCase();
-        if (!godotRooms.has(targetCode)) {
-          return wsSend(ws, { type: 'error', message: 'Room not found.' });
-        }
-        const room = godotRooms.get(targetCode);
-        if (room.peers.size >= 10) {
-          return wsSend(ws, { type: 'error', message: 'Room is full.' });
-        }
-
-        myPeerId = room.nextPeerId++;
-        currentRoomCode = targetCode;
-        room.peers.set(myPeerId, ws);
-
-        console.log(`[Godot] Peer ${myPeerId} joined room: ${targetCode} (${room.peers.size} total)`);
-
-        // Tell the new peer its assigned ID. It will load its scene and then
-        // send client_ready to kick off WebRTC with everyone else.
-        wsSend(ws, { type: 'room_joined', peerId: myPeerId });
-        break;
-      }
-
-      case 'client_ready': {
-        // New client has loaded its game scene and is ready for WebRTC.
-        // Tell every existing peer (including the host) to open a connection TO this new peer.
-        const room = godotRooms.get(currentRoomCode);
-        if (!room) return;
-
-        for (const [existingId, existingWs] of room.peers.entries()) {
-          if (existingId !== myPeerId) {
-            // Tell the existing peer to be the offerer toward the new peer
-            wsSend(existingWs, { type: 'open_connection_to', peerId: myPeerId });
-          }
-        }
-        break;
-      }
-
-      case 'signal': {
-        // Route SDP offer/answer to the specific target peer
-        const room = godotRooms.get(currentRoomCode);
-        if (!room) return;
-        const targetWs = room.peers.get(Number(msg.toId));
-        wsSend(targetWs, { type: 'signal', fromId: myPeerId, data: msg.payload });
-        break;
-      }
-
-      case 'ice_candidate': {
-        // Route ICE candidate to the specific target peer
-        const room = godotRooms.get(currentRoomCode);
-        if (!room) return;
-        const targetWs = room.peers.get(Number(msg.toId));
-        wsSend(targetWs, { type: 'ice_candidate', fromId: myPeerId, data: msg.payload });
-        break;
-      }
-
-      default:
-        console.warn(`[Godot] Unknown message type: ${msg.type}`);
-    }
-  });
-
-  ws.on('close', () => {
-    console.log(`[Godot] Peer ${myPeerId} disconnected (room: ${currentRoomCode})`);
-    if (!currentRoomCode || !godotRooms.has(currentRoomCode)) return;
-
-    const room = godotRooms.get(currentRoomCode);
-    room.peers.delete(myPeerId);
-
-    if (room.peers.size === 0) {
-      // Last one out, delete the room
-      godotRooms.delete(currentRoomCode);
-      console.log(`[Godot] Room ${currentRoomCode} deleted (empty)`);
-    } else {
-      // Notify remaining peers
-      for (const peerWs of room.peers.values()) {
-        wsSend(peerWs, { type: 'peer_disconnected', peerId: myPeerId });
-      }
-      // If the host left, delete the room entirely (could also reassign, but keep it simple)
-      if (myPeerId === 1) {
-        godotRooms.delete(currentRoomCode);
-        console.log(`[Godot] Room ${currentRoomCode} deleted (host left)`);
-      }
-    }
-  });
-
-  ws.on('error', (err) => {
-    console.error(`[Godot] WebSocket error for peer ${myPeerId}:`, err);
-  });
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -189,7 +28,7 @@ app.use(express.static('public'));
 app.use('/turbowarp', express.static(path.join(__dirname, 'public/turbowarp')));
 app.use(express.json());
 
-// --- ROUTES ---
+// routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -256,7 +95,7 @@ app.get('/addon.js', (req, res) => {
   `);
 });
 
-// --- HELPER FUNCTIONS ---
+// helpers
 function generateRoomCode() {
   return crypto.randomBytes(2).toString('hex').toUpperCase();
 }
@@ -281,8 +120,10 @@ function getFullGameState(room, startTime = null) {
 
 function startRoundTimer(room, code, startTime) {
   room.roundActive = true;
+  room.roundEnding = false;
   room.currentRoundStartTime = startTime;
   room.roundTimer = setTimeout(() => {
+    room.roundEnding = true;
     io.to(code).emit('roundTimeout');
     room.players.filter((p, i) => !room.uploaded[i] && p.id).forEach(p => {
       io.to(p.id).emit('autoSaveNow');
@@ -333,8 +174,9 @@ function advanceRound(room, code) {
   startRoundTimer(room, code, newStartTime);
 }
 
-// --- SOCKET LOGIC ---
+// sockets
 io.on('connection', (socket) => {
+  let lastEmoteAt = 0;
 
   socket.on('createRoom', ({ name }) => {
     name = (name || '').trim();
@@ -456,12 +298,34 @@ io.on('connection', (socket) => {
     } catch (e) { socket.emit('error', 'Upload failed.'); }
   });
 
+  socket.on('sendEmote', ({ code, emote }) => {
+    const room = rooms.get(code);
+    const player = room?.players.find(p => p.id === socket.id);
+    const emoteNumber = Number(emote);
+    const now = Date.now();
+
+    if (!room?.started || room.ended || !player) return;
+    if (!Number.isInteger(emoteNumber) || emoteNumber < 1 || emoteNumber > 4) return;
+    if (now - lastEmoteAt < 700) return;
+
+    lastEmoteAt = now;
+    io.to(code).emit('emoteReceived', {
+      name: player.name,
+      emote: emoteNumber
+    });
+  });
+
   socket.on('agreeNext', (code) => {
     const room = rooms.get(code);
-    if (!room || !room.roundActive) return;
+    if (!room || !room.roundActive || room.roundEnding) return;
     room.agreements.add(socket.id);
     io.to(code).emit('agreementUpdate', Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || ''));
     if (room.agreements.size === room.players.length) {
+      room.roundEnding = true;
+      if (room.roundTimer) {
+        clearTimeout(room.roundTimer);
+        room.roundTimer = null;
+      }
       io.to(code).emit('roundEnding');
       setTimeout(() => advanceRound(room, code), 10000);
     }
@@ -488,19 +352,6 @@ io.on('connection', (socket) => {
       }
     }
   });
-});
-
-// --- DUAL-INTERCEPT UPGRADE ENGINE ---
-// Routes WebSocket upgrades: Socket.io handles its own path, Godot gets /ws/matchmaking
-server.on('upgrade', (request, socket, head) => {
-  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-
-  if (pathname === '/ws/matchmaking') {
-    wssGodot.handleUpgrade(request, socket, head, (ws) => {
-      wssGodot.emit('connection', ws, request);
-    });
-  }
-  // Socket.io handles its own upgrade internally — don't touch other paths
 });
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
