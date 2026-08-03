@@ -449,39 +449,248 @@
       text-align: center;
     }
 
-    #finalProjectsList {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      gap: 10px;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    #finalProjectsList li {
-      background: #f8f9fa;
-      padding: 15px;
-      border-radius: 8px;
-      border-left: 4px solid #855CD6;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
     header.hidden {
       display: none;
     }
 
-    #finalProjectsList a {
-      background: #855CD6;
-      color: white;
-      padding: 8px 12px;
-      border-radius: 4px;
-      text-decoration: none;
+    /* end screen */
+    #finalProjectsList {
+      list-style: none;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 640px;
+      margin: 0 auto 24px;
     }
 
-    #finalProjectsList a:hover {
-      background: #0056b3;
+    .final-project-btn {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 22px;
+      border: 3px solid #855CD6;
+      border-radius: 14px;
+      background: #ffffff;
+      color: #333;
+      font-size: 1.15em;
+      text-align: left;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    }
+
+    button.final-project-btn:hover:not(:disabled) {
+      background: #855CD6;
+      color: #ffffff;
+      transform: translateY(-2px);
+    }
+
+    .final-project-btn .owner {
+      font-weight: 700;
+      color: #855CD6;
+    }
+
+    .final-project-btn .meta {
+      color: #666;
+      font-size: 0.9em;
+    }
+
+    .final-project-btn .stars-preview {
+      color: #F8A936;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    button.final-project-btn:hover:not(:disabled) .owner,
+    button.final-project-btn:hover:not(:disabled) .meta,
+    button.final-project-btn:hover:not(:disabled) .stars-preview {
+      color: #ffffff;
+    }
+
+    #ratingStatus {
+      margin: 10px auto 18px;
+      max-width: 640px;
+      color: #444;
+      font-size: 1.05em;
+    }
+
+    #submitRatingsBtn {
+      display: none;
+      margin: 10px auto 30px;
+      padding: 14px 28px;
+      font-size: 1.2em;
+      border-radius: 12px;
+      background: #855CD6;
+    }
+
+    #submitRatingsBtn:disabled {
+      background: #bbb;
+    }
+
+    #resultsPanel {
+      display: none;
+      max-width: 720px;
+      margin: 20px auto 40px;
+      text-align: left;
+    }
+
+    #resultsPanel h3 {
+      text-align: center;
+      color: #855CD6;
+      font-size: 1.8em;
+      margin-bottom: 10px;
+    }
+
+    #winnerCard {
+      background: #fff7e8;
+      border: 3px solid #F8A936;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    #winnerCard .winner-name {
+      font-size: 1.6em;
+      font-weight: 800;
+      color: #333;
+      margin: 8px 0;
+    }
+
+    #rankingList {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 20px;
+    }
+
+    #rankingList li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      margin: 8px 0;
+      background: #f8f9fa;
+      border-radius: 10px;
+      border-left: 5px solid #855CD6;
+    }
+
+    #rankingList li.first {
+      border-left-color: #F8A936;
+      background: #fff7e8;
+      font-weight: 700;
+    }
+
+    #playWinnerBtn {
+      display: none;
+      margin: 0 auto;
+      padding: 14px 28px;
+      font-size: 1.15em;
+      border-radius: 12px;
+      background: #F8A936;
+    }
+
+    #endPlayOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      display: none;
+      flex-direction: column;
+      background: #111;
+    }
+
+    #endPlayOverlay.show {
+      display: flex;
+    }
+
+    #endPlayTopBar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      background: #855CD6;
+      color: white;
+      flex-wrap: wrap;
+    }
+
+    #endPlayTopBar .title {
+      font-weight: 700;
+      font-size: 1.1em;
+    }
+
+    #endPlayFrameWrap {
+      flex: 1;
+      min-height: 0;
+      background: #000;
+    }
+
+    #endPlayFrame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #000;
+    }
+
+    #endPlayRatingBar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 16px;
+      background: #855CD6;
+      color: white;
+      flex-wrap: wrap;
+    }
+
+    #endPlayStars {
+      display: flex;
+      flex-direction: row-reverse;
+      justify-content: flex-end;
+      gap: 0;
+    }
+
+    .star-btn {
+      width: 44px;
+      height: 44px;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: #5a3f8f;
+      font-size: 2em;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    button.star-btn:hover:not(:disabled),
+    .star-btn.active {
+      color: #F8A936;
+      background: transparent;
+    }
+
+    #endPlayStars:hover .star-btn {
+      color: #5a3f8f;
+      background: transparent;
+    }
+
+    #endPlayStars .star-btn:hover,
+    #endPlayStars .star-btn:hover ~ .star-btn {
+      color: #F8A936;
+      background: transparent;
+    }
+
+    #closeEndPlayBtn {
+      margin: 0;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: #F8A936;
+    }
+
+    #closeEndPlayBtn:hover {
+      background: #d18b21;
     }
 
     /* round overlay */
@@ -783,12 +992,6 @@
 
 
     @media (max-width: 768px) {
-      #finalProjectsGrid {
-        grid-template-columns: 1fr !important;
-        gap: 25px;
-        padding: 0 15px;
-      }
-
       main {
         flex-direction: column;
       }
@@ -986,22 +1189,26 @@
 
       <!-- results -->
       <section id="gameEndSection" class="section hidden">
+        <h2 style="text-align: center; margin-bottom:20px;">That's time!</h2>
+        <p id="endScreenBlurb" style="text-align: center; font-size: 1.2em; margin: 20px 0 30px; color:#444;">
+          Play each project, rate it, then submit your ratings.
+        </p>
 
-        <!-- new game -->
+        <ul id="finalProjectsList"></ul>
+        <p id="ratingStatus"></p>
+        <button id="submitRatingsBtn" onclick="submitMyRatings()">Submit Ratings</button>
+
+        <div id="resultsPanel">
+          <h3>Final Rankings</h3>
+          <div id="winnerCard"></div>
+          <ul id="rankingList"></ul>
+          <button id="playWinnerBtn" onclick="playWinningProject()">Play Winner's Game</button>
+        </div>
+
         <div style="text-align: center; margin: 40px 0;">
           <button onclick="location.reload()" class="newgamebtn">
             New Game
           </button>
-        </div>
-
-        <h2 style="text-align: center; margin-bottom:20px;">That's time!</h2>
-        <p style="text-align: center; font-size: 1.4em; margin: 30px 0 50px; color:#444;">
-          Congratulations! Here's what evolved from the original projects:
-        </p>
-
-        <!-- project grid -->
-        <div id="finalProjectsGrid"
-          style="display:grid; grid-template-columns:repeat(auto-fit,minmax(520px,1fr)); gap:40px; margin:40px auto; padding:0 20px;">
         </div>
       </section>
     </div>
@@ -1040,6 +1247,27 @@
 
   <!-- emote popups -->
   <div id="emotePopupStack" class="emote-popup-stack" aria-live="polite"></div>
+
+  <!-- end play overlay -->
+  <div id="endPlayOverlay">
+    <div id="endPlayTopBar">
+      <div class="title" id="endPlayTitle">Project</div>
+      <button id="closeEndPlayBtn" type="button" onclick="closeEndPlay()">Close</button>
+    </div>
+    <div id="endPlayFrameWrap">
+      <iframe id="endPlayFrame" allowfullscreen></iframe>
+    </div>
+    <div id="endPlayRatingBar">
+      <span>Your rating:</span>
+      <div id="endPlayStars">
+        <button class="star-btn" type="button" data-stars="5" onclick="setCurrentRating(5)">★</button>
+        <button class="star-btn" type="button" data-stars="4" onclick="setCurrentRating(4)">★</button>
+        <button class="star-btn" type="button" data-stars="3" onclick="setCurrentRating(3)">★</button>
+        <button class="star-btn" type="button" data-stars="2" onclick="setCurrentRating(2)">★</button>
+        <button class="star-btn" type="button" data-stars="1" onclick="setCurrentRating(1)">★</button>
+      </div>
+    </div>
+  </div>
 
   <!-- round overlay -->
   <div id="roundEndOverlay">
@@ -1130,7 +1358,7 @@
 
       try {
         safeUpdate('fileStatus', el =>
-          el.textContent = "Final save in progress... (usually 2–5 seconds)"
+          el.textContent = "Final save in progress... (usually 2-5 seconds)"
         );
 
         const { base64, filename } = await saveFromEditor();
@@ -1142,7 +1370,7 @@
         });
 
         safeUpdate('fileStatus', el =>
-          el.textContent = `Final save sent as "${filename}" — uploading now...`
+          el.textContent = `Final save sent as "${filename}" - uploading now...`
         );
 
         confirmUpload(filename);
@@ -1270,7 +1498,7 @@
 
     function revertLocalUpload() {
       pendingUploadDataURL = null;
-      safeUpdate('fileStatus', el => el.textContent = 'Upload failed—try again.');
+      safeUpdate('fileStatus', el => el.textContent = 'Upload failed-try again.');
       safeUpdate('nextBtn', el => el.disabled = true);
       safeUpdate('autoSaveBtn', el => el.disabled = false);
       myUploaded = false;
@@ -1304,7 +1532,7 @@
         attempts++;
       }
       if (!tw.vm) {
-        throw new Error('TurboWarp VM not initialized—wait longer or refresh.');
+        throw new Error('TurboWarp VM not initialized-wait longer or refresh.');
       }
       const blob = await tw.vm.saveProjectSb3();
       return new Promise((resolve, reject) => {
@@ -1326,7 +1554,7 @@
 
       btn.disabled = true;
       btn.classList.add('save-locked');
-      btn.textContent = "Saving Locked – 10 Second Cooldown!";
+      btn.textContent = "Saving Locked - 10 Second Cooldown!";
 
       setTimeout(() => {
         if (!hasAgreedThisRound) {
@@ -1434,61 +1662,188 @@
       }, 10000);
     }
 
+    let myRatings = [];
+    let ratingsSubmitted = false;
+    let ratingResults = null;
+    let viewingProjectIndex = null;
+    let winnerProjectIndex = null;
+
+    function starText(n) {
+      if (!n) return 'not rated';
+      return '★'.repeat(n) + '☆'.repeat(5 - n);
+    }
+
+    function allProjectsRated() {
+      return finalProjects.length > 0 && myRatings.every(n => n >= 1 && n <= 5);
+    }
+
+    function updateRatingUi() {
+      const list = document.getElementById('finalProjectsList');
+      const submitBtn = document.getElementById('submitRatingsBtn');
+      const status = document.getElementById('ratingStatus');
+      if (!list) return;
+
+      list.innerHTML = finalProjects.map((p, i) => {
+        const cleanName = (p.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
+        return `
+          <li>
+            <button class="final-project-btn" type="button" onclick="openEndPlay(${i})">
+              <span>
+                <span class="owner">${cleanName}</span>
+                <div class="meta">Started by ${p.owner}</div>
+              </span>
+              <span class="stars-preview">${starText(myRatings[i])}</span>
+            </button>
+          </li>
+        `;
+      }).join('');
+
+      if (ratingsSubmitted || ratingResults) {
+        submitBtn.style.display = 'none';
+      } else {
+        submitBtn.style.display = 'inline-block';
+        submitBtn.disabled = !allProjectsRated();
+      }
+
+      if (ratingResults) {
+        status.textContent = '';
+      } else if (ratingsSubmitted) {
+        status.textContent = 'Ratings submitted - waiting for everyone else...';
+      } else if (allProjectsRated()) {
+        status.textContent = 'All rated! Hit submit when you are ready.';
+      } else {
+        const left = myRatings.filter(n => !n).length;
+        status.textContent = `Open each project and rate it. ${left} left.`;
+      }
+    }
+
+    function openEndPlay(index) {
+      const project = finalProjects[index];
+      if (!project || !currentRoom) return;
+
+      viewingProjectIndex = index;
+      const origin = window.location.origin;
+      const projectUrl = `${origin}/final-download/${currentRoom}/${project.index}`;
+      const embedUrl = `/turbowarp/fullscreen.html?project_url=${encodeURIComponent(projectUrl)}`;
+
+      document.getElementById('endPlayTitle').textContent =
+        `${(project.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled'} · by ${project.owner}`;
+      document.getElementById('endPlayFrame').src = embedUrl;
+
+      const ratingBar = document.getElementById('endPlayRatingBar');
+      ratingBar.style.display = (ratingsSubmitted || ratingResults) ? 'none' : 'flex';
+      paintStarButtons(myRatings[index] || 0);
+
+      document.getElementById('endPlayOverlay').classList.add('show');
+    }
+
+    function closeEndPlay() {
+      document.getElementById('endPlayOverlay').classList.remove('show');
+      document.getElementById('endPlayFrame').src = '';
+      viewingProjectIndex = null;
+      updateRatingUi();
+    }
+
+    function paintStarButtons(selected) {
+      document.querySelectorAll('#endPlayStars .star-btn').forEach((btn) => {
+        const n = Number(btn.dataset.stars);
+        btn.classList.toggle('active', n <= selected);
+      });
+    }
+
+    function setCurrentRating(stars) {
+      if (viewingProjectIndex === null || ratingsSubmitted || ratingResults) return;
+      myRatings[viewingProjectIndex] = stars;
+      paintStarButtons(stars);
+      updateRatingUi();
+    }
+
+    function submitMyRatings() {
+      if (!currentRoom || ratingsSubmitted || ratingResults) return;
+      if (!allProjectsRated()) return alert('Rate every project first.');
+
+      socket.emit('submitRatings', { code: currentRoom, ratings: myRatings.slice() });
+      ratingsSubmitted = true;
+      closeEndPlay();
+      updateRatingUi();
+    }
+
+    function showRatingResults(results) {
+      ratingResults = results;
+      ratingsSubmitted = true;
+      closeEndPlay();
+
+      const panel = document.getElementById('resultsPanel');
+      const winnerCard = document.getElementById('winnerCard');
+      const rankingList = document.getElementById('rankingList');
+      const playWinnerBtn = document.getElementById('playWinnerBtn');
+      const blurb = document.getElementById('endScreenBlurb');
+
+      blurb.textContent = 'Ratings are in! Here are the results.';
+      panel.style.display = 'block';
+
+      if (results.winner) {
+        winnerProjectIndex = results.winner.index;
+        const winnerName = (results.winner.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
+        winnerCard.innerHTML = `
+          <div>Winner</div>
+          <div class="winner-name">${winnerName}</div>
+          <div>Started by ${results.winner.owner} · ${results.winner.average}/5 stars</div>
+        `;
+        playWinnerBtn.style.display = 'inline-block';
+      } else {
+        winnerCard.innerHTML = '<div>No winner yet</div>';
+        playWinnerBtn.style.display = 'none';
+      }
+
+      rankingList.innerHTML = (results.ranking || []).map(entry => {
+        const placeLabel = entry.place === 1 ? '1st' : entry.place === 2 ? '2nd' : entry.place === 3 ? '3rd' : `${entry.place}th`;
+        const projectName = (entry.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
+        return `
+          <li class="${entry.place === 1 ? 'first' : ''}">
+            <span>${placeLabel} - ${projectName}<br><small>Started by ${entry.owner}</small></span>
+            <span>${entry.average}/5</span>
+          </li>
+        `;
+      }).join('');
+
+      updateRatingUi();
+    }
+
+    function playWinningProject() {
+      if (winnerProjectIndex === null) return;
+      const idx = finalProjects.findIndex(p => p.index === winnerProjectIndex);
+      if (idx < 0) return;
+      openEndPlay(idx);
+    }
+
     function showGameEnd(finalData) {
       finalProjects = finalData.projects.map((proj, idx) => ({
         owner: finalData.originalOwners[idx],
         filename: proj.filename,
         index: idx
       }));
+      myRatings = finalProjects.map(() => 0);
+      ratingsSubmitted = false;
+      ratingResults = null;
+      winnerProjectIndex = null;
 
       document.getElementById('gameSection').classList.add('hidden');
       document.getElementById('sidebar').style.display = 'none';
       document.getElementById('gameEndSection').classList.remove('hidden');
-      const grid = document.getElementById('finalProjectsGrid');
-      const origin = window.location.origin;
+      document.getElementById('resultsPanel').style.display = 'none';
+      document.getElementById('playWinnerBtn').style.display = 'none';
+      document.getElementById('endScreenBlurb').textContent =
+        'Play each project, rate it, then submit your ratings.';
 
-      grid.innerHTML = finalProjects.map(p => {
-        const projectUrl = `${origin}/final-download/${currentRoom}/${p.index}`;
-        const cleanName = p.filename.replace(/\.sb3$/i, '');
+      updateRatingUi();
 
-        const embedUrl = `/turbowarp/fullscreen.html?project_url=${encodeURIComponent(projectUrl)}&addons=${encodeURIComponent(origin + '/addon.js')}`;
-
-        return `
-      <div style="background:white; border-radius:18px; overflow:hidden; box-shadow:0 15px 45px rgba(0,0,0,0.22);">
-        <!-- project -->
-        <div style="position:relative; padding-top:62.5%; background:#f0f0f0;">
-          <iframe src="${embedUrl}"
-                  allowfullscreen
-                  loading="lazy"
-                  style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;">
-          </iframe>
-        </div>
-
-        <!-- project info -->
-        <div style="padding:24px; text-align:center; background:#f9f9fa;">
-          <h3 style="margin:0 0 8px; font-size:1.5em; color:#333;">
-            ${p.owner}'s Final Project
-          </h3>
-          <p style="margin:8px 0 16px; color:#666; font-style:italic;">
-            ${cleanName || 'Untitled'}
-          </p>
-          <a href="${projectUrl}"
-             download="${p.filename}" class="download-btn">
-             Download .sb3
-          </a>
-        </div>
-      </div>
-    `;
-      }).join('');
-
-      setTimeout(() => {
-        document.querySelectorAll('#finalProjectsGrid iframe').forEach((iframe, i) => {
-          iframe.onload = () => {
-            const name = finalProjects[i].filename.replace(/\.sb3$/i, '');
-            iframe.contentWindow?.postMessage({ type: 'setProjectName', name }, origin);
-          };
-        });
-      }, 1500);
+      if (finalData.ratingsDone && finalData.ratingResults) {
+        showRatingResults(finalData.ratingResults);
+      } else if (finalData.submittedRatings?.includes(myName)) {
+        ratingsSubmitted = true;
+        updateRatingUi();
+      }
     }
 
     // round countdown
@@ -1788,6 +2143,21 @@
       document.querySelector('header').classList.add('hidden');
     });
 
+    socket.on('ratingsProgress', ({ waitingFor }) => {
+      if (ratingResults) return;
+      const status = document.getElementById('ratingStatus');
+      if (!status) return;
+      if (ratingsSubmitted) {
+        status.textContent = waitingFor?.length
+          ? `Waiting for: ${waitingFor.join(', ')}`
+          : 'Ratings submitted - waiting for everyone else...';
+      }
+    });
+
+    socket.on('ratingResults', (results) => {
+      showRatingResults(results);
+    });
+
     socket.on('rejoinedGame', (data) => {
       console.log('✅ Successfully rejoined game');
 
@@ -1798,6 +2168,13 @@
 
       document.querySelector('header').classList.add('hidden');
       hideStartScreen();
+
+      if (data.ended) {
+        showGameEnd(data);
+        document.getElementById('sidebar').classList.remove('visible');
+        document.getElementById('sidebar').classList.add('hidden');
+        return;
+      }
 
       document.getElementById('gameSection').classList.remove('hidden');
       document.getElementById('sidebar').classList.remove('hidden');
@@ -1840,11 +2217,11 @@
     });
 
     socket.on('roundEnding', async () => {
-      console.log('Round ending — performing final save during 10s grace period');
+      console.log('Round ending - performing final save during 10s grace period');
       pauseRoundTimer();
 
       safeUpdate('fileStatus', el =>
-        el.textContent = "Round ending — saving your final project now..."
+        el.textContent = "Round ending - saving your final project now..."
       );
 
       try {
@@ -1852,7 +2229,7 @@
       } catch (err) {
         console.error("Final save failed:", err);
         safeUpdate('fileStatus', el =>
-          el.textContent = "Final save failed — using your last manual save (or blank)."
+          el.textContent = "Final save failed - using your last manual save (or blank)."
         );
       }
 
@@ -2084,8 +2461,12 @@
     }
 
     document.addEventListener('keydown', e => {
-      if (isCleanFs && e.key === 'Escape') {
-        exitCleanFullscreen();
+      if (e.key === 'Escape') {
+        if (document.getElementById('endPlayOverlay').classList.contains('show')) {
+          closeEndPlay();
+          return;
+        }
+        if (isCleanFs) exitCleanFullscreen();
       }
     });
 
