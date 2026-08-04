@@ -169,7 +169,10 @@ function softLeaveSeat(room, code, idx, { notifyKick = false } = {}) {
     const sock = io.sockets.sockets.get(oldId);
     if (sock) {
       sock.leave(code);
-      try { sock.disconnect(true); } catch (e) { }
+      // give softKicked a moment to flush before dropping the socket
+      const drop = () => { try { sock.disconnect(true); } catch (e) { } };
+      if (notifyKick) setTimeout(drop, 300);
+      else drop();
     }
   }
 
@@ -290,16 +293,30 @@ function computeRatingResults(room) {
       owner: room.owners[index],
       filename: proj.filename,
       average: Math.round(average * 100) / 100,
-      votes: counts[index]
+      votes: counts[index],
+      place: 0
     };
   }).sort((a, b) => {
     if (b.average !== a.average) return b.average - a.average;
     return a.index - b.index;
-  }).map((entry, place) => ({ ...entry, place: place + 1 }));
+  });
+
+  // competition ranking (1224): ties share a place, next rank skips
+  for (let i = 0; i < ranking.length; i++) {
+    if (i === 0) ranking[i].place = 1;
+    else if (ranking[i].average === ranking[i - 1].average) {
+      ranking[i].place = ranking[i - 1].place;
+    } else {
+      ranking[i].place = i + 1;
+    }
+  }
+
+  const winners = ranking.filter(e => e.place === 1);
 
   return {
     ranking,
-    winner: ranking[0] || null
+    winners,
+    winner: winners[0] || null
   };
 }
 

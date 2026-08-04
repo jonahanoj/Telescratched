@@ -756,7 +756,7 @@
       display: none;
     }
 
-    #playerName,
+    .player-name-input,
     #joinCode {
       color: #ffffff !important;
     }
@@ -1081,7 +1081,7 @@
 
           <!-- tab content -->
           <div id="tab-content-create" class="tab-content" style="padding: 30px 25px; text-align: center;">
-            <input type="text" id="playerName" placeholder="Your Name" required maxlength="16"
+            <input type="text" id="playerNameCreate" class="player-name-input" placeholder="Your Name" required maxlength="16"
               style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 35px; display: block; margin-left: auto; margin-right: auto; background-color: #00000030;">
 
             <img src="images/CreateRoomButton.png" alt="Create Room" id="createImageBtn"
@@ -1089,11 +1089,13 @@
           </div>
 
           <div id="tab-content-join" class="tab-content hidden" style="padding: 30px 25px; text-align: center;">
-            <input type="text" id="playerName" placeholder="Your Name" required maxlength="16"
+            <input type="text" id="playerNameJoin" class="player-name-input" placeholder="Your Name" required maxlength="16"
               style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; margin-bottom: 35px; display: block; margin-left: auto; margin-right: auto; background-color: #00000030;">
 
             <input type="text" id="joinCode" placeholder="Room code" required
               style="width: 100%; max-width: 340px; padding: 14px; font-size: 1.1em; border: 2px solid #ccc; border-radius: 10px; text-transform: uppercase; margin-bottom: 25px; display: block; margin-left: auto; margin-right: auto; background-color: #00000030;">
+
+            <p id="joinStatus" style="min-height: 1.2em; color: #555; margin: 0 0 12px;"></p>
 
             <img src="images/JoinRoomButton.png" alt="Join Room" id="joinImageBtn"
               style="width: 70%; max-width: 340px; cursor: pointer; display: block; margin: 0 auto;">
@@ -1321,6 +1323,7 @@
     let isTimeoutActive = false;
     let hasAgreedThisRound = false;
     let currentReadyState = false;
+    let roundCountdownInterval = null;
     // iframe escape
     window.addEventListener('message', function (event) {
       if (event.origin !== window.location.origin) return;
@@ -1472,6 +1475,78 @@
     function lockLobby() {
       safeUpdate('createBtn', el => el.disabled = true);
       safeUpdate('joinBtn', el => el.disabled = true);
+    }
+
+    function unlockLobby() {
+      safeUpdate('createBtn', el => el.disabled = false);
+      safeUpdate('joinBtn', el => el.disabled = false);
+    }
+
+    function setJoinStatus(msg) {
+      safeUpdate('joinStatus', el => { el.textContent = msg || ''; });
+    }
+
+    function ensureSocketConnected(timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        if (socket.connected) return resolve();
+        const timer = setTimeout(() => {
+          socket.off('connect', onConnect);
+          reject(new Error('Could not connect to server. Try again.'));
+        }, timeoutMs);
+        const onConnect = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        socket.once('connect', onConnect);
+        try { socket.connect(); } catch (e) { }
+      });
+    }
+
+    function fillNameInputs(name) {
+      document.querySelectorAll('.player-name-input').forEach(el => { el.value = name || ''; });
+      const host = document.getElementById('hostName');
+      const join = document.getElementById('joinName');
+      if (host) host.value = name || '';
+      if (join) join.value = name || '';
+    }
+
+    function returnToStartScreen({ preferJoin = true } = {}) {
+      unlockLobby();
+      if (timerInterval) clearInterval(timerInterval);
+      pauseRoundTimer();
+      if (typeof backupSaveInterval !== 'undefined' && backupSaveInterval) {
+        clearInterval(backupSaveInterval);
+        backupSaveInterval = null;
+      }
+      if (roundCountdownInterval) {
+        clearInterval(roundCountdownInterval);
+        roundCountdownInterval = null;
+      }
+      const countdownOverlay = document.getElementById('roundEndOverlay');
+      if (countdownOverlay) countdownOverlay.style.display = 'none';
+
+      document.getElementById('gameSection')?.classList.add('hidden');
+      document.getElementById('waitingSection')?.classList.add('hidden');
+      document.getElementById('settingsSection')?.classList.add('hidden');
+      const sidebarEl = document.getElementById('sidebar');
+      if (sidebarEl) {
+        sidebarEl.classList.add('hidden');
+        sidebarEl.classList.remove('visible');
+        sidebarEl.style.display = 'none';
+      }
+      document.querySelector('header')?.classList.remove('hidden');
+      const start = document.getElementById('startScreen');
+      if (start) start.style.display = '';
+
+      const savedName = localStorage.getItem('telescratched_name') || myName || '';
+      const savedCode = localStorage.getItem('telescratched_code') || currentRoom || '';
+      fillNameInputs(savedName);
+      const codeInput = document.getElementById('joinCode');
+      if (codeInput) codeInput.value = savedCode;
+      setJoinStatus('');
+
+      if (preferJoin) showJoin();
+      else showCreate();
     }
 
     function updateStartBtn() {
@@ -1763,6 +1838,14 @@
     let ratingResults = null;
     let viewingProjectIndex = null;
     let winnerProjectIndex = null;
+    let winnerProjectIndexes = [];
+
+    function placeLabel(place) {
+      if (place === 1) return '1st';
+      if (place === 2) return '2nd';
+      if (place === 3) return '3rd';
+      return `${place}th`;
+    }
 
     function starText(n) {
       if (!n) return 'not rated';
@@ -1878,14 +1961,34 @@
       blurb.textContent = 'Ratings are in! Here are the results.';
       panel.style.display = 'block';
 
-      if (results.winner) {
-        winnerProjectIndex = results.winner.index;
-        const winnerName = (results.winner.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
+      const winners = (results.winners && results.winners.length)
+        ? results.winners
+        : (results.winner ? [results.winner] : []);
+
+      winnerProjectIndexes = winners.map(w => w.index);
+      winnerProjectIndex = winnerProjectIndexes[0] ?? null;
+
+      if (winners.length === 1) {
+        const w = winners[0];
+        const winnerName = (w.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
         winnerCard.innerHTML = `
           <div>Winner</div>
           <div class="winner-name">${winnerName}</div>
-          <div>Started by ${results.winner.owner} · ${results.winner.average}/5 stars</div>
+          <div>Started by ${w.owner} · ${w.average}/5 stars</div>
         `;
+        playWinnerBtn.textContent = "Play Winner's Game";
+        playWinnerBtn.style.display = 'inline-block';
+      } else if (winners.length > 1) {
+        const names = winners.map(w => {
+          const n = (w.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
+          return `${n} (by ${w.owner})`;
+        }).join('<br>');
+        winnerCard.innerHTML = `
+          <div>Tie for 1st!</div>
+          <div class="winner-name">${names}</div>
+          <div>${winners[0].average}/5 stars each</div>
+        `;
+        playWinnerBtn.textContent = 'Play a Tied Winner';
         playWinnerBtn.style.display = 'inline-block';
       } else {
         winnerCard.innerHTML = '<div>No winner yet</div>';
@@ -1893,11 +1996,10 @@
       }
 
       rankingList.innerHTML = (results.ranking || []).map(entry => {
-        const placeLabel = entry.place === 1 ? '1st' : entry.place === 2 ? '2nd' : entry.place === 3 ? '3rd' : `${entry.place}th`;
         const projectName = (entry.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
         return `
           <li class="${entry.place === 1 ? 'first' : ''}">
-            <span>${placeLabel} - ${projectName}<br><small>Started by ${entry.owner}</small></span>
+            <span>${placeLabel(entry.place)} - ${projectName}<br><small>Started by ${entry.owner}</small></span>
             <span>${entry.average}/5</span>
           </li>
         `;
@@ -1907,10 +2009,14 @@
     }
 
     function playWinningProject() {
-      if (winnerProjectIndex === null) return;
-      const idx = finalProjects.findIndex(p => p.index === winnerProjectIndex);
+      if (!winnerProjectIndexes.length) return;
+      const playIndex = winnerProjectIndex ?? winnerProjectIndexes[0];
+      const idx = finalProjects.findIndex(p => p.index === playIndex);
       if (idx < 0) return;
       openEndPlay(idx);
+      // next click plays the other tied winner, if any
+      const currentPos = winnerProjectIndexes.indexOf(playIndex);
+      winnerProjectIndex = winnerProjectIndexes[(currentPos + 1) % winnerProjectIndexes.length];
     }
 
     async function exportAllProjects() {
@@ -2130,12 +2236,14 @@
       ratingsSubmitted = false;
       ratingResults = null;
       winnerProjectIndex = null;
+      winnerProjectIndexes = [];
 
       document.getElementById('gameSection').classList.add('hidden');
       document.getElementById('sidebar').style.display = 'none';
       document.getElementById('gameEndSection').classList.remove('hidden');
       document.getElementById('resultsPanel').style.display = 'none';
       document.getElementById('playWinnerBtn').style.display = 'none';
+      document.getElementById('playWinnerBtn').textContent = "Play Winner's Game";
       document.getElementById('endScreenBlurb').textContent =
         'Play each project, rate it, then submit your ratings.';
 
@@ -2150,7 +2258,6 @@
     }
 
     // round countdown
-    let roundCountdownInterval = null;
     function startRoundCountdown() {
       console.log('Starting 5-4-3-2-1 countdown');
       const overlay = document.getElementById('roundEndOverlay');
@@ -2180,7 +2287,9 @@
       hideStartScreen();
       currentRoom = data.code;
 
-      myName = document.getElementById('playerName').value.trim();
+      myName = document.getElementById('playerNameCreate')?.value.trim()
+        || document.getElementById('hostName')?.value.trim()
+        || myName;
       rememberSession(myName, data.code);
 
       isHost = true;
@@ -2203,9 +2312,14 @@
     });
 
     socket.on('roomJoined', (data) => {
+      setJoinStatus('');
       hideStartScreen();
       currentRoom = data.code;
-      myName = document.getElementById('joinName').value.trim() || myName || localStorage.getItem('telescratched_name') || '';
+      myName = document.getElementById('joinName').value.trim()
+        || document.getElementById('playerNameJoin')?.value.trim()
+        || myName
+        || localStorage.getItem('telescratched_name')
+        || '';
       rememberSession(myName, data.code);
       isHost = data.players[0] === myName;
       gameSettings = data.settings;
@@ -2498,6 +2612,7 @@
     socket.on('rejoinedGame', (data) => {
       console.log('Successfully rejoined game');
       blockAutoRejoin = false;
+      setJoinStatus('');
 
       players = data.players;
       myIndex = data.myIndex;
@@ -2578,32 +2693,9 @@
 
     socket.on('softKicked', (data) => {
       blockAutoRejoin = true;
-      if (timerInterval) clearInterval(timerInterval);
-      pauseRoundTimer();
-      if (typeof backupSaveInterval !== 'undefined' && backupSaveInterval) {
-        clearInterval(backupSaveInterval);
-        backupSaveInterval = null;
-      }
-
-      alert(data?.message || 'You were disconnected. Refresh or rejoin with the same name to continue.');
-
-      document.getElementById('gameSection')?.classList.add('hidden');
-      const sidebarEl = document.getElementById('sidebar');
-      if (sidebarEl) {
-        sidebarEl.classList.add('hidden');
-        sidebarEl.classList.remove('visible');
-      }
-      document.querySelector('header')?.classList.remove('hidden');
-      const start = document.getElementById('startScreen');
-      if (start) start.style.display = '';
-
-      const savedName = localStorage.getItem('telescratched_name') || myName || '';
-      const savedCode = localStorage.getItem('telescratched_code') || currentRoom || '';
-      document.querySelectorAll('#playerName').forEach(el => { el.value = savedName; });
-      const codeInput = document.getElementById('joinCode') || document.getElementById('roomCode');
-      if (codeInput) codeInput.value = savedCode;
-
-      showJoin();
+      alert(data?.message || 'You were disconnected. Rejoin with the same name to continue.');
+      returnToStartScreen({ preferJoin: true });
+      setJoinStatus('Kicked - click Join Room with the same name to get back in.');
     });
 
     socket.on('error', (msg) => {
@@ -2689,10 +2781,29 @@
     }
 
     function joinRoom() {
-      const name = document.getElementById('joinName').value.trim();
+      const name = (
+        document.getElementById('playerNameJoin')?.value.trim()
+        || document.getElementById('joinName')?.value.trim()
+        || ''
+      );
       const code = document.getElementById('joinCode').value.trim().toUpperCase();
       if (!name || !code) return alert('Enter name and code');
-      socket.emit('joinRoom', { code, name });
+
+      blockAutoRejoin = false;
+      rememberSession(name, code);
+      document.getElementById('joinName').value = name;
+      fillNameInputs(name);
+      setJoinStatus('Connecting...');
+
+      ensureSocketConnected()
+        .then(() => {
+          setJoinStatus('Joining room...');
+          socket.emit('joinRoom', { code, name });
+        })
+        .catch((err) => {
+          setJoinStatus('');
+          alert(err.message || 'Could not connect. Try again or reload.');
+        });
     }
 
     function updatePlayers(pList) {
@@ -2853,24 +2964,22 @@
     });
 
     document.getElementById('createImageBtn').addEventListener('click', () => {
-      const name = document.getElementById('playerName').value.trim();
+      const name = document.getElementById('playerNameCreate').value.trim();
       if (!name) {
         alert('Please enter your name');
         return;
       }
       document.getElementById('hostName').value = name;
+      fillNameInputs(name);
       createRoom();
     });
 
     document.getElementById('joinImageBtn').addEventListener('click', () => {
-      const name = document.getElementById('playerName').value.trim();
+      const name = document.getElementById('playerNameJoin').value.trim();
       const code = document.getElementById('joinCode').value.trim().toUpperCase();
 
       if (!name) return alert('Please enter your name');
       if (!code) return alert('Please enter the room code');
-
-      blockAutoRejoin = false;
-      rememberSession(name, code);
 
       document.getElementById('joinName').value = name;
       joinRoom();
@@ -2902,7 +3011,7 @@
     showCreate();
     document.getElementById('passProjectBtn').addEventListener('click', toggleReady);
 
-    const nameInputs = document.querySelectorAll('#tab-content-create #playerName, #tab-content-join #playerName');
+    const nameInputs = document.querySelectorAll('.player-name-input');
 
     nameInputs.forEach(input => {
       input.addEventListener('input', () => {
@@ -2954,10 +3063,7 @@
     window.addEventListener('load', () => {
       const savedName = localStorage.getItem('telescratched_name');
       const savedCode = localStorage.getItem('telescratched_code');
-      if (savedName) {
-        const nameInputs = document.querySelectorAll('#playerName');
-        nameInputs.forEach(input => input.value = savedName);
-      }
+      if (savedName) fillNameInputs(savedName);
       if (savedCode) {
         document.getElementById('joinCode').value = savedCode;
       }
