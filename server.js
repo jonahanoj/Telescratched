@@ -345,16 +345,15 @@ function maybeCleanupRoom(code, room) {
     return;
   }
 
-  // keep empty rooms briefly so refresh / flaky net can reclaim seats
+  // keep empty rooms briefly so a refresh can reclaim, then shut down
   if (room.cleanupTimer) return;
-  const graceMs = room.started ? 10 * 60 * 1000 : 2 * 60 * 1000;
   room.cleanupTimer = setTimeout(() => {
     room.cleanupTimer = null;
     if (connectedPlayers(room).length > 0) return;
     clearRoundTimers(room);
     rooms.delete(code);
     console.log(`Room ${code} closed after empty grace`);
-  }, graceMs);
+  }, 60 * 1000);
 }
 
 // take or reclaim a seat (refresh / same-name rejoin)
