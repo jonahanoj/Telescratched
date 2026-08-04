@@ -222,10 +222,25 @@
       font-weight: bold;
     }
 
-    #playerSidebarList .checkmark {
-      color: #4caf50;
-      font-size: 1.2em;
+    #playerSidebarList li.offline {
+      opacity: 0.55;
+      border-left-color: #999;
+      background: #ececec;
+    }
+
+    #playerSidebarList .offline-tag {
+      color: #666;
+      font-size: 0.8em;
+      margin-left: 6px;
+    }
+
+    #playerSidebarList .kick-btn {
       float: right;
+      margin: 0;
+      padding: 2px 8px;
+      background: #ff4d4d;
+      border-radius: 4px;
+      font-size: 0.85em;
     }
 
     #sidebarTimer {
@@ -1197,6 +1212,9 @@
         <ul id="finalProjectsList"></ul>
         <p id="ratingStatus"></p>
         <button id="submitRatingsBtn" onclick="submitMyRatings()">Submit Ratings</button>
+        <button id="exportAllBtn" onclick="exportAllProjects()" style="display:inline-block;margin:10px auto 30px;padding:14px 28px;font-size:1.1em;border-radius:12px;background:#F8A936;">
+          Download All Projects
+        </button>
 
         <div id="resultsPanel">
           <h3>Final Rankings</h3>
@@ -1290,9 +1308,12 @@
     let roundStartTime = null;
     let myIndex = -1;
     let lockedMyIndex = undefined;
+    let serverRound = 0;
+    let saveEpoch = 0; // bumped on round change; drops in-flight saves
     let myUploaded = false;
     let pendingUploadDataURL = null;
     let agreements = [];
+    let playerPresence = {}; // name -> online bool
     let finalProjects = [];
     let nameUpdateTimeout = null;
     let beepAudio = null;
@@ -1313,40 +1334,85 @@
     socket.on('connect_error', (err) => console.warn('Connection error:', err.message));
     socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
 
-    // auto rejoin
+    // auto rejoin after refresh / reconnect
     let lastRejoinAttempt = 0;
+    let blockAutoRejoin = false; // set on host soft-kick; cleared by refresh or manual join
+
+    function rememberSession(name, code) {
+      if (name) {
+        myName = name;
+        localStorage.setItem('telescratched_name', name);
+      }
+      if (code) {
+        currentRoom = code;
+        localStorage.setItem('telescratched_code', code);
+      }
+    }
 
     function attemptSmartRejoin() {
+      if (blockAutoRejoin) return;
+
       const now = Date.now();
       if (now - lastRejoinAttempt < 1800) return;
       lastRejoinAttempt = now;
 
-      if (!currentRoom || !myName) return;
+      const name = (myName || localStorage.getItem('telescratched_name') || '').trim();
+      const code = (currentRoom || localStorage.getItem('telescratched_code') || '').trim().toUpperCase();
+      if (!name || !code) return;
 
-      const gameVisible = !document.getElementById('gameSection').classList.contains('hidden');
-      const waitingVisible = !document.getElementById('waitingSection').classList.contains('hidden');
-      const isInSession = gameVisible || waitingVisible;
-
-      if (isInSession) {
-        console.log(`🔄 Smart rejoin for ${myName} in ${currentRoom}`);
-        socket.emit('rejoinRoom', { code: currentRoom, name: myName });
-      }
+      myName = name;
+      currentRoom = code;
+      console.log(`Smart rejoin for ${name} in ${code}`);
+      socket.emit('rejoinRoom', { code, name });
     }
 
     socket.on('connect', () => {
-      console.log('✅ Socket (re)connected');
+      console.log('Socket (re)connected');
       attemptSmartRejoin();
     });
 
     socket.on('reconnect', () => {
-      console.log('✅ Socket reconnected');
+      console.log('Socket reconnected');
       attemptSmartRejoin();
+    });
+
+    socket.on('rejoinFailed', (data) => {
+      console.warn('Rejoin failed:', data?.reason);
+      // stale session leftover - stay on start screen
     });
 
     // safe update
     function safeUpdate(id, fn) {
       const el = document.getElementById(id);
       if (el) fn(el);
+    }
+
+    function setServerRound(round) {
+      const next = Number(round) || 0;
+      if (next !== serverRound) {
+        serverRound = next;
+        saveEpoch += 1;
+      } else {
+        serverRound = next;
+      }
+    }
+
+    function emitProjectUpload(base64, filename, roundOverride) {
+      const round = roundOverride != null ? roundOverride : serverRound;
+      if (!currentRoom || myIndex < 0 || !round) return;
+      socket.emit('uploadFile', {
+        code: currentRoom,
+        fileBase64: base64,
+        filename,
+        round,
+        seat: myIndex
+      });
+    }
+
+    function editorUrlForSeat(seatIndex) {
+      const origin = window.location.origin;
+      const bust = Date.now();
+      return `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${seatIndex}&addons=${origin}/addon.js&t=${bust}`;
     }
 
     async function performFinalSave() {
@@ -1356,6 +1422,10 @@
         return false;
       }
 
+      const roundAtStart = serverRound;
+      const epochAtStart = saveEpoch;
+      const seatAtStart = myIndex;
+
       try {
         safeUpdate('fileStatus', el =>
           el.textContent = "Final save in progress... (usually 2-5 seconds)"
@@ -1363,11 +1433,12 @@
 
         const { base64, filename } = await saveFromEditor();
 
-        socket.emit('uploadFile', {
-          code: currentRoom,
-          fileBase64: base64,
-          filename
-        });
+        if (epochAtStart !== saveEpoch || roundAtStart !== serverRound || seatAtStart !== myIndex) {
+          console.warn('Discarded stale final save after round change');
+          return false;
+        }
+
+        emitProjectUpload(base64, filename, roundAtStart);
 
         safeUpdate('fileStatus', el =>
           el.textContent = `Final save sent as "${filename}" - uploading now...`
@@ -1552,6 +1623,9 @@
       const btn = document.getElementById('autoSaveBtn');
       if (!btn) return;
 
+      const roundAtStart = serverRound;
+      const epochAtStart = saveEpoch;
+
       btn.disabled = true;
       btn.classList.add('save-locked');
       btn.textContent = "Saving Locked - 10 Second Cooldown!";
@@ -1566,7 +1640,11 @@
 
       saveFromEditor()
         .then(({ base64, filename }) => {
-          socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
+          if (epochAtStart !== saveEpoch) {
+            console.warn('Discarded stale manual save after round change');
+            return;
+          }
+          emitProjectUpload(base64, filename, roundAtStart);
 
           safeUpdate('fileStatus', el =>
             el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
@@ -1608,9 +1686,27 @@
         const li = document.createElement('li');
         const isMe = player === myName;
         const isReady = agreements.includes(player);
+        const online = playerPresence[player] !== false;
         li.className = isMe ? 'my-name' : '';
         if (isReady) li.classList.add('ready');
-        li.innerHTML = `<span>${player}</span>${isReady ? '<span class="checkmark">✅</span>' : ''}`;
+        if (!online) li.classList.add('offline');
+
+        const label = document.createElement('span');
+        label.innerHTML = `<span>${player}</span>${!online ? '<span class="offline-tag">(offline)</span>' : ''}${isReady ? '<span class="checkmark">✅</span>' : ''}`;
+        li.appendChild(label);
+
+        if (isHost && !isMe) {
+          const kickBtn = document.createElement('button');
+          kickBtn.type = 'button';
+          kickBtn.className = 'kick-btn';
+          kickBtn.textContent = 'Kick';
+          kickBtn.onclick = (e) => {
+            e.stopPropagation();
+            kickPlayer(player);
+          };
+          li.appendChild(kickBtn);
+        }
+
         sidebarList.appendChild(li);
       });
     }
@@ -1817,6 +1913,213 @@
       openEndPlay(idx);
     }
 
+    async function exportAllProjects() {
+      if (!currentRoom) return alert('No room');
+
+      const ended = !document.getElementById('gameEndSection').classList.contains('hidden')
+        || !!ratingResults
+        || finalProjects.length > 0;
+
+      const items = finalProjects.length
+        ? finalProjects
+        : players.map((name, i) => ({
+            owner: name,
+            index: i,
+            filename: `${name || ('project' + i)}.sb3`
+          }));
+
+      for (const p of items) {
+        try {
+          const path = ended ? 'final-download' : 'download';
+          const res = await fetch(`/${path}/${currentRoom}/${p.index}`);
+          if (!res.ok) {
+            // fallback if game hasnt ended yet
+            const res2 = await fetch(`/download/${currentRoom}/${p.index}`);
+            if (!res2.ok) throw new Error('missing');
+            const blob2 = await res2.blob();
+            const a2 = document.createElement('a');
+            a2.href = URL.createObjectURL(blob2);
+            a2.download = (p.filename || `${p.owner}.sb3`).replace(/[^\w.\-]+/g, '_');
+            document.body.appendChild(a2);
+            a2.click();
+            a2.remove();
+          } else {
+            const blob = await res.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = (p.filename || `${p.owner}.sb3`).replace(/[^\w.\-]+/g, '_');
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          }
+        } catch (err) {
+          console.warn('export failed for', p, err);
+        }
+        await new Promise(r => setTimeout(r, 350));
+      }
+    }
+
+    function forceEndGame() {
+      if (!currentRoom) return alert('No room');
+      if (!confirm('Force end the game for everyone and go to the results screen?')) return;
+      socket.emit('forceEndGame', { code: currentRoom });
+    }
+
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || '');
+          const base64 = result.includes(',') ? result.split(',')[1] : result;
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function reloadMyEditor() {
+      const embed = document.getElementById('scratchEmbed');
+      if (!embed || myIndex < 0 || !currentRoom) return;
+      const origin = window.location.origin;
+      const bust = Date.now();
+      embed.src = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js&t=${bust}`;
+      safeUpdate('fromOwner', el => {
+        // keep current label; roundAdvanced/dev update may refresh it
+      });
+    }
+
+    async function devAssign(index, file) {
+      if (!currentRoom) return alert('No room');
+      if (!isHost) return alert('Host only');
+
+      const roundNow = Number(document.getElementById('roundNum')?.textContent || 0);
+      if (roundNow !== 1) return alert('Handoff only works on round 1.');
+
+      const idx = Number(index);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= players.length) {
+        return alert('Bad index. players = ' + JSON.stringify(players));
+      }
+
+      let picked = file;
+      if (!picked) {
+        picked = await new Promise((resolve) => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.sb3,application/octet-stream';
+          input.onchange = () => resolve(input.files?.[0] || null);
+          input.click();
+        });
+      }
+      if (!picked) return;
+
+      const fileBase64 = await fileToBase64(picked);
+      socket.emit('devSetProject', {
+        code: currentRoom,
+        index: idx,
+        fileBase64,
+        filename: picked.name || `project-${idx}.sb3`,
+        ownerName: players[idx]
+      });
+    }
+
+    function handoff() {
+      if (!currentRoom) return console.warn('no room');
+      if (!isHost) return console.warn('host only');
+
+      const roundNow = Number(document.getElementById('roundNum')?.textContent || 0);
+      if (roundNow !== 1) {
+        console.warn('handoff only works on round 1');
+        return alert('Handoff only works on round 1.');
+      }
+
+      let panel = document.getElementById('devAssignPanel');
+      if (panel) {
+        panel.remove();
+      }
+
+      panel = document.createElement('div');
+      panel.id = 'devAssignPanel';
+      panel.style.cssText = [
+        'position:fixed', 'z-index:20000', 'right:16px', 'top:16px',
+        'width:320px', 'max-height:80vh', 'overflow:auto',
+        'background:#1d1530', 'color:#fff', 'padding:14px',
+        'border-radius:12px', 'border:3px solid #855CD6',
+        'box-shadow:0 10px 30px rgba(0,0,0,.35)', 'font:14px sans-serif'
+      ].join(';');
+
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <strong>handoff (round 1)</strong>
+          <button type="button" id="devPanelClose" style="margin:0;background:#F8A936;padding:6px 10px;border-radius:8px;">x</button>
+        </div>
+        <div style="opacity:.85;margin-bottom:10px;font-size:12px;">
+          assign an .sb3 to each seat, then close.
+        </div>
+        <div id="devAssignRows"></div>
+      `;
+      document.body.appendChild(panel);
+
+      const rows = panel.querySelector('#devAssignRows');
+      players.forEach((name, i) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'margin:0 0 10px;padding:10px;background:#2a1f45;border-radius:8px;';
+        row.innerHTML = `
+          <div style="margin-bottom:6px;"><b>${i}</b> - ${name}${i === myIndex ? ' (you)' : ''}</div>
+          <input type="file" accept=".sb3,application/octet-stream" data-dev-index="${i}" style="width:100%;color:#fff;" />
+        `;
+        rows.appendChild(row);
+      });
+
+      rows.addEventListener('change', async (e) => {
+        const input = e.target;
+        if (input?.type !== 'file') return;
+        const idx = Number(input.getAttribute('data-dev-index'));
+        const file = input.files?.[0];
+        if (!file) return;
+        input.disabled = true;
+        try {
+          await devAssign(idx, file);
+          input.style.outline = '2px solid #2ecc71';
+        } catch (err) {
+          console.error(err);
+          alert('assign failed');
+        } finally {
+          input.disabled = false;
+        }
+      });
+
+      panel.querySelector('#devPanelClose').onclick = () => panel.remove();
+      console.log('handoff open - assign .sb3 files per seat');
+    }
+
+    socket.on('devSetProjectOk', ({ index, filename }) => {
+      console.log(`handoff: slot ${index} <= ${filename}`);
+    });
+
+    socket.on('devProjectUpdated', (data) => {
+      if (typeof data.index === 'number' && data.index === myIndex) {
+        if (data.owner) safeUpdate('fromOwner', el => el.textContent = data.owner);
+        reloadMyEditor();
+        safeUpdate('fileStatus', el =>
+          el.textContent = `Loaded "${data.filename}" into your seat.`
+        );
+      }
+      if (Array.isArray(data.owners) && myIndex >= 0) {
+        safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
+      }
+    });
+
+    // console helpers:
+    //   handoff()             - round 1 only, assign .sb3 files
+    //   exportAllProjects()
+    //   forceEndGame()
+    window.exportAllProjects = exportAllProjects;
+    window.forceEndGame = forceEndGame;
+    window.handoff = handoff;
+    window.devAssign = devAssign;
+    window.reloadMyEditor = reloadMyEditor;
+
     function showGameEnd(finalData) {
       finalProjects = finalData.projects.map((proj, idx) => ({
         owner: finalData.originalOwners[idx],
@@ -1847,21 +2150,27 @@
     }
 
     // round countdown
+    let roundCountdownInterval = null;
     function startRoundCountdown() {
       console.log('Starting 5-4-3-2-1 countdown');
       const overlay = document.getElementById('roundEndOverlay');
       const textEl = document.getElementById('countdownText');
       const display = document.getElementById('countdownDisplay');
+      if (roundCountdownInterval) {
+        clearInterval(roundCountdownInterval);
+        roundCountdownInterval = null;
+      }
       textEl.textContent = 'Wrapping up round...';
       overlay.style.display = 'flex';
       let count = 10;
       display.textContent = count;
-      const countdownInterval = setInterval(() => {
+      roundCountdownInterval = setInterval(() => {
         count--;
         if (count > 0) {
           display.textContent = count;
         } else {
-          clearInterval(countdownInterval);
+          clearInterval(roundCountdownInterval);
+          roundCountdownInterval = null;
           overlay.style.display = 'none';
         }
       }, 1000);
@@ -1872,6 +2181,7 @@
       currentRoom = data.code;
 
       myName = document.getElementById('playerName').value.trim();
+      rememberSession(myName, data.code);
 
       isHost = true;
 
@@ -1895,7 +2205,8 @@
     socket.on('roomJoined', (data) => {
       hideStartScreen();
       currentRoom = data.code;
-      myName = document.getElementById('joinName').value.trim();
+      myName = document.getElementById('joinName').value.trim() || myName || localStorage.getItem('telescratched_name') || '';
+      rememberSession(myName, data.code);
       isHost = data.players[0] === myName;
       gameSettings = data.settings;
       settingsSaved = data.confirmed;
@@ -1914,13 +2225,27 @@
 
     socket.on('playerListUpdate', (pList) => {
       players = pList;
-      myIndex = myName ? players.indexOf(myName) : -1;
+      isHost = !!myName && players[0] === myName;
+      if (typeof lockedMyIndex === 'number' && players[lockedMyIndex] === myName) {
+        myIndex = lockedMyIndex;
+      } else {
+        myIndex = myName ? players.indexOf(myName) : -1;
+        if (myIndex >= 0) lockedMyIndex = myIndex;
+      }
 
       updatePlayers(players);
 
       updateStartBtn();
       updatePlayerSidebar();
       updateHostControls();
+    });
+
+    socket.on('playerPresence', (list) => {
+      playerPresence = {};
+      (list || []).forEach(p => {
+        playerPresence[p.name] = !!p.online;
+      });
+      updatePlayerSidebar();
     });
 
     socket.on('settingsUpdated', (data) => {
@@ -1937,6 +2262,8 @@
       players = data.players;
       myIndex = players.indexOf(myName);
       lockedMyIndex = myIndex;
+      if (data.settings) gameSettings = data.settings;
+      setServerRound(data.round);
       safeUpdate('waitingSection', el => el.classList.add('hidden'));
       safeUpdate('settingsSection', el => el.classList.add('hidden'));
       safeUpdate('gameSection', el => el.classList.remove('hidden'));
@@ -1946,14 +2273,11 @@
       updateGameState(data);
       const embed = document.getElementById('scratchEmbed');
       if (embed) {
-        const origin = window.location.origin;
-        const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
-
         if (embed.contentWindow) {
           embed.contentWindow.onbeforeunload = null;
         }
 
-        embed.src = newUrl;
+        embed.src = editorUrlForSeat(myIndex);
 
         safeUpdate('loadingSpinner', el => el.style.display = 'block');
 
@@ -1961,6 +2285,7 @@
           safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
           const tw = embed.contentWindow;
+          const origin = window.location.origin;
           if (tw && tw.vm && data.projects[myIndex].filename) {
             const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
             tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
@@ -1999,25 +2324,31 @@
       safeUpdate('roundNumSidebar', el => el.textContent = data.round);
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
       startAutoBackup();
+      if (isHost) {
+        console.log('dev: on round 1 run handoff() to assign .sb3 files');
+      }
     });
 
     socket.on('roundAdvanced', (data) => {
       players = data.players;
-      myIndex = players.indexOf(myName);
-      lockedMyIndex = myIndex;
+      // keep stable seat - dont reshuffle from name each round
+      if (typeof lockedMyIndex === 'number' && players[lockedMyIndex] === myName) {
+        myIndex = lockedMyIndex;
+      } else {
+        myIndex = players.indexOf(myName);
+        lockedMyIndex = myIndex;
+      }
+      setServerRound(data.round);
       safeUpdate('roundNum', el => el.textContent = data.round);
       safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
       updateGameState(data);
       const embed = document.getElementById('scratchEmbed');
       if (embed) {
-        const origin = window.location.origin;
-        const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
-
         if (embed.contentWindow) {
           embed.contentWindow.onbeforeunload = null;
         }
 
-        embed.src = newUrl;
+        embed.src = editorUrlForSeat(myIndex);
 
         safeUpdate('loadingSpinner', el => el.style.display = 'block');
 
@@ -2025,6 +2356,7 @@
           safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
           const tw = embed.contentWindow;
+          const origin = window.location.origin;
           if (tw && tw.vm && data.projects[myIndex].filename) {
             const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
             tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
@@ -2067,6 +2399,10 @@
 
     function updateGameState(data) {
       agreements = data.agreements;
+      if (Array.isArray(data.presence)) {
+        playerPresence = {};
+        data.presence.forEach(p => { playerPresence[p.name] = !!p.online; });
+      }
       const myProj = data.projects[myIndex];
 
       updatePlayerSidebar();
@@ -2116,6 +2452,7 @@
     // round timeout
     socket.on('roundTimeout', () => {
       isTimeoutActive = true;
+      pauseRoundTimer();
       safeUpdate('timeLeft', el => el.textContent = '0:00');
       safeUpdate('sidebarTimer', el => el.textContent = '0:00');
       safeUpdate('fileStatus', el => el.textContent = "Time's up! Auto-saving and locking editor.");
@@ -2159,12 +2496,24 @@
     });
 
     socket.on('rejoinedGame', (data) => {
-      console.log('✅ Successfully rejoined game');
+      console.log('Successfully rejoined game');
+      blockAutoRejoin = false;
 
       players = data.players;
       myIndex = data.myIndex;
+      lockedMyIndex = data.myIndex;
       currentRoom = localStorage.getItem('telescratched_code') || currentRoom;
       myName = localStorage.getItem('telescratched_name') || myName;
+      rememberSession(myName, currentRoom);
+      isHost = players[0] === myName;
+
+      if (Array.isArray(data.presence)) {
+        playerPresence = {};
+        data.presence.forEach(p => { playerPresence[p.name] = !!p.online; });
+      }
+
+      if (data.settings) gameSettings = data.settings;
+      setServerRound(data.round);
 
       document.querySelector('header').classList.add('hidden');
       hideStartScreen();
@@ -2179,30 +2528,82 @@
       document.getElementById('gameSection').classList.remove('hidden');
       document.getElementById('sidebar').classList.remove('hidden');
       document.getElementById('sidebar').classList.add('visible');
+      document.getElementById('sidebar').style.display = '';
+
+      if (data.owners) {
+        safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
+      }
+      safeUpdate('roundNum', el => el.textContent = data.round);
 
       const embed = document.getElementById('scratchEmbed');
       const origin = window.location.origin;
-      const newUrl = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js`;
 
       safeUpdate('loadingSpinner', el => el.style.display = 'block');
-      embed.src = newUrl;
+      embed.src = editorUrlForSeat(myIndex);
 
       embed.onload = () => {
         safeUpdate('loadingSpinner', el => el.style.display = 'none');
 
-        if (embed.contentWindow && data.projects[myIndex].filename) {
+        if (embed.contentWindow && data.projects?.[myIndex]?.filename) {
           const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
           embed.contentWindow.postMessage({ type: 'setProjectName', name: cleanName }, origin);
         }
       };
 
+      agreements = data.agreements || [];
+      currentReadyState = !!data.currentReadyState;
+      hasAgreedThisRound = currentReadyState;
+      updateReadyButton();
       updateGameState(data);
-      updateTimer(data.roundStartTime);
+
+      if (data.roundEnding) {
+        pauseRoundTimer();
+        safeUpdate('sidebarTimer', el => el.textContent = '0:00');
+      } else if (data.roundStartTime) {
+        if (!gameSettings.timer && data.timeLeft != null) {
+          // approximate remaining into timer display using server start
+          gameSettings.timer = gameSettings.timer || ((Date.now() - data.roundStartTime) + data.timeLeft);
+        }
+        updateTimer(data.roundStartTime);
+      }
 
       startAutoBackup();
 
       safeUpdate('roundNumSidebar', el => el.textContent = data.round);
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds);
+      safeUpdate('fileStatus', el =>
+        el.textContent = 'Rejoined! Timer synced - pick up where you left off.'
+      );
+    });
+
+    socket.on('softKicked', (data) => {
+      blockAutoRejoin = true;
+      if (timerInterval) clearInterval(timerInterval);
+      pauseRoundTimer();
+      if (typeof backupSaveInterval !== 'undefined' && backupSaveInterval) {
+        clearInterval(backupSaveInterval);
+        backupSaveInterval = null;
+      }
+
+      alert(data?.message || 'You were disconnected. Refresh or rejoin with the same name to continue.');
+
+      document.getElementById('gameSection')?.classList.add('hidden');
+      const sidebarEl = document.getElementById('sidebar');
+      if (sidebarEl) {
+        sidebarEl.classList.add('hidden');
+        sidebarEl.classList.remove('visible');
+      }
+      document.querySelector('header')?.classList.remove('hidden');
+      const start = document.getElementById('startScreen');
+      if (start) start.style.display = '';
+
+      const savedName = localStorage.getItem('telescratched_name') || myName || '';
+      const savedCode = localStorage.getItem('telescratched_code') || currentRoom || '';
+      document.querySelectorAll('#playerName').forEach(el => { el.value = savedName; });
+      const codeInput = document.getElementById('joinCode') || document.getElementById('roomCode');
+      if (codeInput) codeInput.value = savedCode;
+
+      showJoin();
     });
 
     socket.on('error', (msg) => {
@@ -2241,25 +2642,6 @@
       const name = document.getElementById('hostName').value.trim();
       if (!name) return alert('Enter name');
       socket.emit('createRoom', { name });
-    }
-
-    function saveSettings() {
-      let cycles = parseInt(document.getElementById('cycles').value) || 1;
-      let timer = parseInt(document.getElementById('timer').value) || 10;
-      let maxP = parseInt(document.getElementById('maxPlayers').value) || 4;
-
-      cycles = Math.max(1, Math.min(10, cycles));
-      timer = Math.max(1, Math.min(120, timer));
-      maxP = Math.max(2, Math.min(10, maxP));
-
-      const settings = {
-        cycles: cycles,
-        timer: timer,
-        maxPlayers: maxP
-      };
-
-      socket.emit('setSettings', { code: currentRoom, settings });
-      document.getElementById('settingsSection').classList.add('hidden');
     }
 
     function editSettings() {
@@ -2355,7 +2737,7 @@
     }
 
     function kickPlayer(targetName) {
-      if (confirm(`Are you sure you want to kick ${targetName}?`)) {
+      if (confirm(`Kick ${targetName}? They can rejoin with the same name to continue.`)) {
         socket.emit('kickPlayer', { code: currentRoom, targetName });
       }
     }
@@ -2487,8 +2869,8 @@
       if (!name) return alert('Please enter your name');
       if (!code) return alert('Please enter the room code');
 
-      localStorage.setItem('telescratched_name', name);
-      localStorage.setItem('telescratched_code', code);
+      blockAutoRejoin = false;
+      rememberSession(name, code);
 
       document.getElementById('joinName').value = name;
       joinRoom();
@@ -2627,9 +3009,12 @@
         if (isGameVisible && !hasAgreedThisRound && !isTimeoutActive) {
           console.log("Running 30-second background backup...");
 
+          const roundAtStart = serverRound;
+          const epochAtStart = saveEpoch;
           saveFromEditor()
             .then(({ base64, filename }) => {
-              socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
+              if (epochAtStart !== saveEpoch || roundAtStart !== serverRound) return;
+              emitProjectUpload(base64, filename, roundAtStart);
             })
             .catch(err => console.warn("Background backup skipped:", err));
         }
@@ -2641,8 +3026,9 @@
       if (currentRoom && !document.getElementById('gameSection').classList.contains('hidden')) {
         const embed = document.getElementById('scratchEmbed');
         if (embed && embed.contentWindow) {
+          const roundAtStart = serverRound;
           saveFromEditor().then(({ base64, filename }) => {
-            socket.emit('uploadFile', { code: currentRoom, fileBase64: base64, filename });
+            emitProjectUpload(base64, filename, roundAtStart);
           });
         }
       }

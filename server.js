@@ -34,27 +34,27 @@ app.get('/', (req, res) => {
 });
 
 app.get('/download/:code/:index', (req, res) => {
-  const { code, index } = req.params;
-  const room = rooms.get(code);
+  const room = getRoom(req.params.code);
   if (!room || !room.started) return res.status(404).send('Project not found.');
-  const idx = parseInt(index);
-  if (isNaN(idx) || idx < 0 || idx >= room.players.length || !room.projects[idx].buffer) {
+  const idx = parseInt(req.params.index);
+  if (isNaN(idx) || idx < 0 || idx >= room.players.length || !room.projects[idx]?.buffer) {
     return res.status(404).send('Project not available.');
   }
   res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.send(room.projects[idx].buffer);
 });
 
 app.get('/final-download/:code/:index', (req, res) => {
-  const { code, index } = req.params;
-  const room = rooms.get(code);
+  const room = getRoom(req.params.code);
   if (!room || !room.ended) return res.status(404).send('Project not found');
-  const idx = parseInt(index);
+  const idx = parseInt(req.params.index);
   if (isNaN(idx) || idx < 0 || idx >= room.players.length || !room.projects[idx]?.buffer) {
     return res.status(404).send('Project not available');
   }
   res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.send(room.projects[idx].buffer);
 });
@@ -100,8 +100,34 @@ function generateRoomCode() {
   return crypto.randomBytes(2).toString('hex').toUpperCase();
 }
 
+function normalizeCode(code) {
+  return (code || '').toString().trim().toUpperCase();
+}
+
+function getRoom(code) {
+  return rooms.get(normalizeCode(code));
+}
+
 function connectedPlayers(room) {
   return room.players.filter(p => p.id);
+}
+
+function agreementNames(room) {
+  return Array.from(room.agreements)
+    .map(id => room.players.find(p => p.id === id)?.name || '')
+    .filter(Boolean);
+}
+
+function emitAgreements(room, code) {
+  io.to(code).emit('agreementUpdate', agreementNames(room));
+}
+
+function emitPresence(room, code) {
+  io.to(code).emit('playerPresence', room.players.map(p => ({
+    name: p.name,
+    online: !!p.id
+  })));
+  io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
 }
 
 function getFullGameState(room, startTime = null) {
@@ -111,15 +137,67 @@ function getFullGameState(room, startTime = null) {
 
   return {
     players: room.players.map(p => p.name),
+    presence: room.players.map(p => ({ name: p.name, online: !!p.id })),
     projects: room.projects.map(p => ({ filename: p.filename })),
     owners: room.owners,
     uploaded: room.uploaded.map((u, i) => ({ player: room.players[i].name, uploaded: u })),
-    agreements: Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || '').filter(Boolean),
+    agreements: agreementNames(room),
     round: room.currentRound,
     roundStartTime: actualStartTime,
     timeLeft,
-    maxRounds: room.settings.cycles * room.players.length
+    maxRounds: room.settings.cycles * room.players.length,
+    settings: room.settings,
+    roundActive: !!room.roundActive,
+    roundEnding: !!room.roundEnding
   };
+}
+
+function softLeaveSeat(room, code, idx, { notifyKick = false } = {}) {
+  const player = room.players[idx];
+  if (!player) return;
+
+  const oldId = player.id;
+  if (oldId) {
+    room.agreements.delete(oldId);
+    // clear seat before disconnect so the disconnect handler does not soft-leave twice
+    player.id = null;
+    if (notifyKick) {
+      io.to(oldId).emit('softKicked', {
+        message: 'You were disconnected from the room. Rejoin with the same name to continue.'
+      });
+    }
+    const sock = io.sockets.sockets.get(oldId);
+    if (sock) {
+      sock.leave(code);
+      try { sock.disconnect(true); } catch (e) { }
+    }
+  }
+
+  emitPresence(room, code);
+  emitAgreements(room, code);
+
+  if (room.started && !room.ended) {
+    maybeAdvanceFromAgreements(room, code);
+  } else if (room.ended && !room.ratingsDone) {
+    maybeFinishRatings(room, code);
+    io.to(code).emit('ratingsProgress', {
+      submitted: Array.from(room.submittedRatings || []),
+      waitingFor: connectedPlayers(room)
+        .map(p => p.name)
+        .filter(name => !(room.submittedRatings || new Set()).has(name))
+    });
+  }
+
+  maybeCleanupRoom(code, room);
+}
+
+function clearStaleSeat(room, idx) {
+  const player = room.players[idx];
+  if (!player?.id) return;
+  if (!io.sockets.sockets.get(player.id)) {
+    room.agreements.delete(player.id);
+    player.id = null;
+  }
 }
 
 function allConnectedAgreed(room) {
@@ -128,17 +206,59 @@ function allConnectedAgreed(room) {
   return connected.every(p => room.agreements.has(p.id));
 }
 
-function maybeAdvanceFromAgreements(room, code) {
-  if (!room.roundActive || room.roundEnding) return;
-  if (!allConnectedAgreed(room)) return;
-
-  room.roundEnding = true;
+function clearRoundTimers(room) {
   if (room.roundTimer) {
     clearTimeout(room.roundTimer);
     room.roundTimer = null;
   }
+  if (room.graceTimer) {
+    clearTimeout(room.graceTimer);
+    room.graceTimer = null;
+  }
+}
+
+function beginRoundEnding(room, code, { fromTimeout = false } = {}) {
+  if (!room.roundActive || room.roundEnding) return false;
+
+  room.roundEnding = true;
+  clearRoundTimers(room);
+
+  if (fromTimeout) {
+    io.to(code).emit('roundTimeout');
+    room.players.filter((p, i) => !room.uploaded[i] && p.id).forEach(p => {
+      io.to(p.id).emit('autoSaveNow');
+    });
+  }
+
   io.to(code).emit('roundEnding');
-  setTimeout(() => advanceRound(room, code), 10000);
+
+  room.graceTimer = setTimeout(() => {
+    room.graceTimer = null;
+    room.roundActive = false;
+    room.projects.forEach((proj, i) => {
+      if (!room.uploaded[i] || !proj.buffer || proj.buffer.length === 0) {
+        proj.buffer = proj.buffer && proj.buffer.length ? proj.buffer : Buffer.from(BLANK_BUFFER);
+        proj.filename = proj.filename || 'blank.sb3';
+        room.uploaded[i] = true;
+      }
+    });
+    connectedPlayers(room).forEach(p => room.agreements.add(p.id));
+    advanceRound(room, code);
+  }, 10000);
+
+  return true;
+}
+
+function endGameNow(room, code) {
+  clearRoundTimers(room);
+  room.ended = true;
+  room.roundActive = false;
+  room.roundEnding = false;
+  room.ratings = new Map();
+  room.submittedRatings = new Set();
+  room.ratingsDone = false;
+  room.ratingResults = null;
+  io.to(code).emit('gameEnd', getEndPayload(room));
 }
 
 function getEndPayload(room) {
@@ -195,42 +315,106 @@ function maybeFinishRatings(room, code) {
   io.to(code).emit('ratingResults', room.ratingResults);
 }
 
+function cancelRoomCleanup(room) {
+  if (room.cleanupTimer) {
+    clearTimeout(room.cleanupTimer);
+    room.cleanupTimer = null;
+  }
+}
+
 function maybeCleanupRoom(code, room) {
-  if (connectedPlayers(room).length > 0) return;
-  if (room.roundTimer) clearTimeout(room.roundTimer);
-  rooms.delete(code);
-  console.log(`Room ${code} closed`);
+  if (connectedPlayers(room).length > 0) {
+    cancelRoomCleanup(room);
+    return;
+  }
+
+  // keep empty rooms briefly so refresh / flaky net can reclaim seats
+  if (room.cleanupTimer) return;
+  const graceMs = room.started ? 10 * 60 * 1000 : 2 * 60 * 1000;
+  room.cleanupTimer = setTimeout(() => {
+    room.cleanupTimer = null;
+    if (connectedPlayers(room).length > 0) return;
+    clearRoundTimers(room);
+    rooms.delete(code);
+    console.log(`Room ${code} closed after empty grace`);
+  }, graceMs);
+}
+
+// take or reclaim a seat (refresh / same-name rejoin)
+function claimSeat(room, code, idx, socket) {
+  const player = room.players[idx];
+  if (!player) return;
+
+  const oldId = player.id;
+  // assign first so old disconnect does not soft-leave this seat
+  player.id = socket.id;
+  cancelRoomCleanup(room);
+
+  if (oldId && oldId !== socket.id) {
+    room.agreements.delete(oldId);
+    const oldSock = io.sockets.sockets.get(oldId);
+    if (oldSock) {
+      try {
+        oldSock.leave(code);
+        oldSock.disconnect(true);
+      } catch (e) { }
+    }
+  }
+
+  socket.join(code);
+}
+
+function sendRejoinedGame(socket, room, idx) {
+  if (room.ended) {
+    return socket.emit('rejoinedGame', {
+      ...getEndPayload(room),
+      myIndex: idx,
+      ended: true,
+      ratingsDone: !!room.ratingsDone,
+      ratingResults: room.ratingResults,
+      submittedRatings: Array.from(room.submittedRatings || [])
+    });
+  }
+
+  if (!room.started) return;
+
+  const state = getFullGameState(room, room.currentRoundStartTime);
+  socket.emit('rejoinedGame', {
+    ...state,
+    myIndex: idx,
+    currentReadyState: room.agreements.has(socket.id)
+  });
+}
+
+function maybeAdvanceFromAgreements(room, code) {
+  if (!allConnectedAgreed(room)) return;
+  beginRoundEnding(room, code, { fromTimeout: false });
 }
 
 function startRoundTimer(room, code, startTime) {
   room.roundActive = true;
   room.roundEnding = false;
   room.currentRoundStartTime = startTime;
-  room.roundTimer = setTimeout(() => {
-    room.roundEnding = true;
-    io.to(code).emit('roundTimeout');
-    room.players.filter((p, i) => !room.uploaded[i] && p.id).forEach(p => {
-      io.to(p.id).emit('autoSaveNow');
-    });
-    io.to(code).emit('roundEnding');
+  clearRoundTimers(room);
 
-    setTimeout(() => {
-      room.roundActive = false;
-      room.projects.forEach((proj, i) => {
-        if (!room.uploaded[i] || !proj.buffer || proj.buffer.length === 0) {
-          proj.buffer = proj.buffer || BLANK_BUFFER;
-          proj.filename = proj.filename || 'blank.sb3';
-          room.uploaded[i] = true;
-        }
-      });
-      connectedPlayers(room).forEach(p => room.agreements.add(p.id));
-      advanceRound(room, code);
-    }, 10000);
+  room.roundTimer = setTimeout(() => {
+    room.roundTimer = null;
+    beginRoundEnding(room, code, { fromTimeout: true });
   }, room.settings.timer);
 }
 
 function advanceRound(room, code) {
-  if (room.roundTimer) clearTimeout(room.roundTimer);
+  // only once per round-ending; prevents double-rotate races
+  if (!room.roundEnding) return;
+  room.roundEnding = false;
+  clearRoundTimers(room);
+
+  const maxRounds = room.settings.cycles * room.players.length;
+  // end on the last completed round - do NOT rotate again (that handed people their own project)
+  if (room.currentRound >= maxRounds) {
+    endGameNow(room, code);
+    return;
+  }
 
   const lastProject = room.projects.pop();
   const lastOwner = room.owners.pop();
@@ -240,19 +424,6 @@ function advanceRound(room, code) {
   room.uploaded.fill(false);
   room.agreements.clear();
   room.currentRound++;
-
-  const maxRounds = room.settings.cycles * room.players.length;
-  if (room.currentRound > maxRounds) {
-    room.ended = true;
-    room.roundActive = false;
-    room.roundEnding = false;
-    room.ratings = new Map();
-    room.submittedRatings = new Set();
-    room.ratingsDone = false;
-    room.ratingResults = null;
-    io.to(code).emit('gameEnd', getEndPayload(room));
-    return;
-  }
 
   const newStartTime = Date.now();
   room.currentRoundStartTime = newStartTime;
@@ -285,62 +456,59 @@ io.on('connection', (socket) => {
   });
 
   socket.on('kickPlayer', ({ code, targetName }) => {
-    const room = rooms.get(code);
-    if (!room || room.players[0].id !== socket.id || room.started) return;
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
+    if (!room || room.players[0]?.id !== socket.id) return;
 
     const targetIdx = room.players.findIndex(p => p.name === targetName);
-    if (targetIdx > -1 && targetIdx !== 0) {
+    if (targetIdx <= 0) return; // cant kick host / missing
+
+    if (!room.started) {
       const kickedSocketId = room.players[targetIdx].id;
       room.players.splice(targetIdx, 1);
-
       if (kickedSocketId) {
         io.to(kickedSocketId).emit('kicked');
         const kickedSocket = io.sockets.sockets.get(kickedSocketId);
-        if (kickedSocket) kickedSocket.leave(code);
+        if (kickedSocket) kickedSocket.leave(roomCode);
       }
-      io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
+      emitPresence(room, roomCode);
+      maybeCleanupRoom(roomCode, room);
+      return;
     }
+
+    // mid-game: soft kick, keep their project seat for rejoin
+    softLeaveSeat(room, roomCode, targetIdx, { notifyKick: true });
+    console.log(`Host soft-kicked ${targetName} from ${roomCode}`);
   });
 
   socket.on('joinRoom', ({ code, name }) => {
     name = (name || '').trim();
-    const roomCode = (code || '').toUpperCase();
+    const roomCode = normalizeCode(code);
     const room = rooms.get(roomCode);
     if (!room) return socket.emit('error', 'Room not found.');
 
     const existingPlayerIndex = room.players.findIndex(p => p.name === name);
 
     if (existingPlayerIndex !== -1) {
-      if (room.started) {
-        if (room.players[existingPlayerIndex].id === null) {
-          room.players[existingPlayerIndex].id = socket.id;
-          socket.join(roomCode);
-
-          if (room.ended) {
-            return socket.emit('rejoinedGame', {
-              ...getEndPayload(room),
-              myIndex: existingPlayerIndex,
-              ended: true,
-              ratingsDone: !!room.ratingsDone,
-              ratingResults: room.ratingResults,
-              submittedRatings: Array.from(room.submittedRatings || [])
-            });
-          }
-
-          const state = getFullGameState(room, room.currentRoundStartTime);
-          return socket.emit('rejoinedGame', {
-            ...state,
-            myIndex: existingPlayerIndex,
-            currentReadyState: room.agreements.has(socket.id)
-          });
-        } else {
-          return socket.emit('error', 'This player is already connected.');
-        }
-      } else {
-        if (room.players[existingPlayerIndex].id !== socket.id) {
-          return socket.emit('error', 'Name taken.');
-        }
+      const existing = room.players[existingPlayerIndex];
+      // lobby: only reclaim offline seats; mid-game refresh may take over
+      if (!room.started && existing.id && existing.id !== socket.id && io.sockets.sockets.get(existing.id)) {
+        return socket.emit('error', 'Name taken.');
       }
+
+      claimSeat(room, roomCode, existingPlayerIndex, socket);
+      emitPresence(room, roomCode);
+
+      if (room.started || room.ended) {
+        return sendRejoinedGame(socket, room, existingPlayerIndex);
+      }
+
+      return socket.emit('roomJoined', {
+        code: roomCode,
+        players: room.players.map(p => p.name),
+        settings: room.settings,
+        confirmed: room.settingsConfirmed
+      });
     }
 
     if (room.started) return socket.emit('error', 'Game already started.');
@@ -348,50 +516,47 @@ io.on('connection', (socket) => {
 
     socket.join(roomCode);
     room.players.push({ id: socket.id, name });
+    cancelRoomCleanup(room);
     socket.emit('roomJoined', {
       code: roomCode,
       players: room.players.map(p => p.name),
       settings: room.settings,
       confirmed: room.settingsConfirmed
     });
-    io.to(roomCode).emit('playerListUpdate', room.players.map(p => p.name));
+    emitPresence(room, roomCode);
   });
 
   socket.on('rejoinRoom', ({ code, name }) => {
-    const roomCode = (code || '').toUpperCase();
+    const roomCode = normalizeCode(code);
     const room = rooms.get(roomCode);
-    if (!room) return;
     name = (name || '').trim();
+    if (!room || !name) {
+      return socket.emit('rejoinFailed', { reason: 'Room not found.' });
+    }
+
     const idx = room.players.findIndex(p => p.name === name);
-    if (idx === -1) return;
-    if (room.players[idx].id && room.players[idx].id !== socket.id) return;
-
-    room.players[idx].id = socket.id;
-    socket.join(roomCode);
-
-    if (room.ended) {
-      return socket.emit('rejoinedGame', {
-        ...getEndPayload(room),
-        myIndex: idx,
-        ended: true,
-        ratingsDone: !!room.ratingsDone,
-        ratingResults: room.ratingResults,
-        submittedRatings: Array.from(room.submittedRatings || [])
-      });
+    if (idx === -1) {
+      return socket.emit('rejoinFailed', { reason: 'You are not in this room.' });
     }
 
-    if (room.started) {
-      const state = getFullGameState(room, room.currentRoundStartTime);
-      socket.emit('rejoinedGame', {
-        ...state,
-        myIndex: idx,
-        currentReadyState: room.agreements.has(socket.id)
-      });
+    claimSeat(room, roomCode, idx, socket);
+    emitPresence(room, roomCode);
+
+    if (room.started || room.ended) {
+      return sendRejoinedGame(socket, room, idx);
     }
+
+    socket.emit('roomJoined', {
+      code: roomCode,
+      players: room.players.map(p => p.name),
+      settings: room.settings,
+      confirmed: room.settingsConfirmed
+    });
   });
 
   socket.on('setSettings', ({ code, settings }) => {
-    const room = rooms.get(code);
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
     if (!room || room.players[0]?.id !== socket.id) return;
     room.settings = {
       cycles: Math.min(10, Math.max(1, parseInt(settings.cycles) || 1)),
@@ -399,38 +564,108 @@ io.on('connection', (socket) => {
       maxPlayers: Math.min(10, Math.max(2, parseInt(settings.maxPlayers) || 4))
     };
     room.settingsConfirmed = true;
-    io.to(code).emit('settingsUpdated', { settings: room.settings, confirmed: true });
+    io.to(roomCode).emit('settingsUpdated', { settings: room.settings, confirmed: true });
   });
 
   socket.on('startGame', (code) => {
-    const room = rooms.get(code);
-    if (!room || room.players[0]?.id !== socket.id || room.players.length < 2) return;
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
+    if (!room || room.players[0]?.id !== socket.id) return;
+    if (connectedPlayers(room).length < 2) {
+      return socket.emit('error', 'Need at least 2 connected players to start.');
+    }
+    if (room.players.some(p => !p.id)) {
+      return socket.emit('error', 'Some players are offline. Kick them or wait for them to rejoin.');
+    }
     room.started = true;
-    room.projects = room.players.map(() => ({ buffer: BLANK_BUFFER, filename: 'blank.sb3' }));
+    room.projects = room.players.map(() => ({
+      buffer: Buffer.from(BLANK_BUFFER),
+      filename: 'blank.sb3'
+    }));
     room.owners = room.players.map(p => p.name);
     room.uploaded = room.players.map(() => false);
+    room.agreements = new Set();
     room.currentRound = 1;
     const startTime = Date.now();
-    io.to(code).emit('gameStarted', getFullGameState(room, startTime));
-    startRoundTimer(room, code, startTime);
+    io.to(roomCode).emit('gameStarted', getFullGameState(room, startTime));
+    startRoundTimer(room, roomCode, startTime);
   });
 
-  socket.on('uploadFile', ({ code, fileBase64, filename }) => {
-    const room = rooms.get(code);
-    if (!room || !room.roundActive) return socket.emit('error', 'Round not active.');
+  socket.on('uploadFile', ({ code, fileBase64, filename, round, seat }) => {
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
+    if (!room || room.ended) return;
+    // active round, or still in the 10s ending grace
+    if (!room.roundActive && !room.roundEnding) {
+      return socket.emit('error', 'Round not active.');
+    }
+
     const idx = room.players.findIndex(p => p.id === socket.id);
     if (idx === -1) return;
+
+    // reject late saves from a previous round (would overwrite the newly rotated project)
+    const uploadRound = Number(round);
+    if (!Number.isInteger(uploadRound) || uploadRound !== room.currentRound) {
+      console.log(`Dropped stale upload from ${room.players[idx].name} (round ${uploadRound} vs ${room.currentRound})`);
+      return;
+    }
+
+    if (seat != null && Number(seat) !== idx) {
+      console.log(`Dropped upload with wrong seat from ${room.players[idx].name}`);
+      return;
+    }
 
     try {
       room.projects[idx] = { buffer: Buffer.from(fileBase64, 'base64'), filename };
       room.uploaded[idx] = true;
-      io.to(code).emit('playerUploaded', { name: room.players[idx].name, filename });
+      io.to(roomCode).emit('playerUploaded', { name: room.players[idx].name, filename });
       socket.emit('uploadSuccess', { filename });
     } catch (e) { socket.emit('error', 'Upload failed.'); }
   });
 
+  // host only, round 1 only: force-assign an .sb3 into a player slot
+  socket.on('devSetProject', ({ code, index, fileBase64, filename, ownerName }) => {
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
+    if (!room?.started || room.ended) return socket.emit('error', 'Game not active.');
+    if (room.players[0]?.id !== socket.id) return socket.emit('error', 'Host only.');
+    if (room.currentRound !== 1 || room.roundEnding) {
+      return socket.emit('error', 'Handoff only works on round 1.');
+    }
+
+    const idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= room.players.length) {
+      return socket.emit('error', 'Bad player index.');
+    }
+    if (!fileBase64) return socket.emit('error', 'No file data.');
+
+    try {
+      const safeName = (filename || `project-${idx}.sb3`).replace(/[^\w.\-]+/g, '_');
+      room.projects[idx] = {
+        buffer: Buffer.from(fileBase64, 'base64'),
+        filename: safeName.endsWith('.sb3') ? safeName : `${safeName}.sb3`
+      };
+      room.uploaded[idx] = true;
+      if (typeof ownerName === 'string' && ownerName.trim()) {
+        room.owners[idx] = ownerName.trim().slice(0, 16);
+      }
+
+      io.to(roomCode).emit('devProjectUpdated', {
+        index: idx,
+        filename: room.projects[idx].filename,
+        owner: room.owners[idx],
+        players: room.players.map(p => p.name),
+        owners: room.owners.slice()
+      });
+      socket.emit('devSetProjectOk', { index: idx, filename: room.projects[idx].filename });
+    } catch (e) {
+      socket.emit('error', 'Dev assign failed.');
+    }
+  });
+
   socket.on('sendEmote', ({ code, emote }) => {
-    const room = rooms.get(code);
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
     const player = room?.players.find(p => p.id === socket.id);
     const emoteNumber = Number(emote);
     const now = Date.now();
@@ -440,29 +675,32 @@ io.on('connection', (socket) => {
     if (now - lastEmoteAt < 700) return;
 
     lastEmoteAt = now;
-    io.to(code).emit('emoteReceived', {
+    io.to(roomCode).emit('emoteReceived', {
       name: player.name,
       emote: emoteNumber
     });
   });
 
   socket.on('agreeNext', (code) => {
-    const room = rooms.get(code);
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
     if (!room || !room.roundActive || room.roundEnding) return;
     room.agreements.add(socket.id);
-    io.to(code).emit('agreementUpdate', Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || '').filter(Boolean));
-    maybeAdvanceFromAgreements(room, code);
+    emitAgreements(room, roomCode);
+    maybeAdvanceFromAgreements(room, roomCode);
   });
 
   socket.on('unagreeNext', (code) => {
-    const room = rooms.get(code);
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
     if (!room) return;
     room.agreements.delete(socket.id);
-    io.to(code).emit('agreementUpdate', Array.from(room.agreements).map(id => room.players.find(p => p.id === id)?.name || '').filter(Boolean));
+    emitAgreements(room, roomCode);
   });
 
   socket.on('submitRatings', ({ code, ratings }) => {
-    const room = rooms.get(code);
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
     if (!room?.ended || room.ratingsDone) return;
 
     const player = room.players.find(p => p.id === socket.id);
@@ -486,14 +724,24 @@ io.on('connection', (socket) => {
     room.ratings.set(player.name, scores);
     room.submittedRatings.add(player.name);
 
-    io.to(code).emit('ratingsProgress', {
+    io.to(roomCode).emit('ratingsProgress', {
       submitted: Array.from(room.submittedRatings),
       waitingFor: connectedPlayers(room)
         .map(p => p.name)
         .filter(name => !room.submittedRatings.has(name))
     });
 
-    maybeFinishRatings(room, code);
+    maybeFinishRatings(room, roomCode);
+  });
+
+  // emergency: jump to end screen with current projects
+  socket.on('forceEndGame', ({ code }) => {
+    const roomCode = normalizeCode(code);
+    const room = rooms.get(roomCode);
+    if (!room?.started || room.ended) return;
+    if (!room.players.some(p => p.id === socket.id)) return;
+    console.log(`Force end requested for ${roomCode}`);
+    endGameNow(room, roomCode);
   });
 
   socket.on('disconnect', () => {
@@ -502,34 +750,9 @@ io.on('connection', (socket) => {
       if (idx === -1) continue;
 
       const playerName = room.players[idx].name;
-      room.agreements.delete(socket.id);
 
-      if (room.started) {
-        // keep their project slot even if they leave
-        room.players[idx].id = null;
-        io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
-
-        if (!room.ended) {
-          maybeAdvanceFromAgreements(room, code);
-        } else if (!room.ratingsDone) {
-          maybeFinishRatings(room, code);
-          io.to(code).emit('ratingsProgress', {
-            submitted: Array.from(room.submittedRatings || []),
-            waitingFor: connectedPlayers(room)
-              .map(p => p.name)
-              .filter(name => !(room.submittedRatings || new Set()).has(name))
-          });
-        }
-
-        maybeCleanupRoom(code, room);
-      } else {
-        room.players.splice(idx, 1);
-        if (room.players.length === 0) {
-          rooms.delete(code);
-        } else {
-          io.to(code).emit('playerListUpdate', room.players.map(p => p.name));
-        }
-      }
+      // keep seat in lobby and mid-game so refresh can reclaim the same name
+      softLeaveSeat(room, code, idx, { notifyKick: false });
 
       console.log(`${playerName} left ${code}`);
     }
