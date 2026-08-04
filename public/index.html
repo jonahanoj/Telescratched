@@ -597,6 +597,23 @@
       font-weight: 700;
     }
 
+    #playWinnerButtons {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin: 0 auto 20px;
+    }
+
+    #playWinnerButtons button {
+      display: inline-block;
+      margin: 0;
+      padding: 14px 28px;
+      font-size: 1.15em;
+      border-radius: 12px;
+      background: #F8A936;
+    }
+
     #playWinnerBtn {
       display: none;
       margin: 0 auto;
@@ -1222,11 +1239,11 @@
           <h3>Final Rankings</h3>
           <div id="winnerCard"></div>
           <ul id="rankingList"></ul>
-          <button id="playWinnerBtn" onclick="playWinningProject()">Play Winner's Game</button>
+          <div id="playWinnerButtons"></div>
         </div>
 
         <div style="text-align: center; margin: 40px 0;">
-          <button onclick="location.reload()" class="newgamebtn">
+          <button onclick="startFreshGame()" class="newgamebtn">
             New Game
           </button>
         </div>
@@ -1337,9 +1354,9 @@
     socket.on('connect_error', (err) => console.warn('Connection error:', err.message));
     socket.on('disconnect', (reason) => console.warn('Disconnected:', reason));
 
-    // auto rejoin after refresh / reconnect
+    // reconnect only if already in a live session (not on refresh / new game)
     let lastRejoinAttempt = 0;
-    let blockAutoRejoin = false; // set on host soft-kick; cleared by refresh or manual join
+    let blockAutoRejoin = false;
 
     function rememberSession(name, code) {
       if (name) {
@@ -1352,21 +1369,28 @@
       }
     }
 
+    function isInLiveSession() {
+      const game = document.getElementById('gameSection');
+      const waiting = document.getElementById('waitingSection');
+      const end = document.getElementById('gameEndSection');
+      return !!(
+        (game && !game.classList.contains('hidden')) ||
+        (waiting && !waiting.classList.contains('hidden')) ||
+        (end && !end.classList.contains('hidden'))
+      );
+    }
+
     function attemptSmartRejoin() {
       if (blockAutoRejoin) return;
+      if (!currentRoom || !myName) return;
+      if (!isInLiveSession()) return;
 
       const now = Date.now();
       if (now - lastRejoinAttempt < 1800) return;
       lastRejoinAttempt = now;
 
-      const name = (myName || localStorage.getItem('telescratched_name') || '').trim();
-      const code = (currentRoom || localStorage.getItem('telescratched_code') || '').trim().toUpperCase();
-      if (!name || !code) return;
-
-      myName = name;
-      currentRoom = code;
-      console.log(`Smart rejoin for ${name} in ${code}`);
-      socket.emit('rejoinRoom', { code, name });
+      console.log(`Reclaiming seat for ${myName} in ${currentRoom}`);
+      socket.emit('rejoinRoom', { code: currentRoom, name: myName });
     }
 
     socket.on('connect', () => {
@@ -1381,7 +1405,6 @@
 
     socket.on('rejoinFailed', (data) => {
       console.warn('Rejoin failed:', data?.reason);
-      // stale session leftover - stay on start screen
     });
 
     // safe update
@@ -1955,7 +1978,7 @@
       const panel = document.getElementById('resultsPanel');
       const winnerCard = document.getElementById('winnerCard');
       const rankingList = document.getElementById('rankingList');
-      const playWinnerBtn = document.getElementById('playWinnerBtn');
+      const playWinnerButtons = document.getElementById('playWinnerButtons');
       const blurb = document.getElementById('endScreenBlurb');
 
       blurb.textContent = 'Ratings are in! Here are the results.';
@@ -1976,8 +1999,6 @@
           <div class="winner-name">${winnerName}</div>
           <div>Started by ${w.owner} · ${w.average}/5 stars</div>
         `;
-        playWinnerBtn.textContent = "Play Winner's Game";
-        playWinnerBtn.style.display = 'inline-block';
       } else if (winners.length > 1) {
         const names = winners.map(w => {
           const n = (w.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
@@ -1988,11 +2009,18 @@
           <div class="winner-name">${names}</div>
           <div>${winners[0].average}/5 stars each</div>
         `;
-        playWinnerBtn.textContent = 'Play a Tied Winner';
-        playWinnerBtn.style.display = 'inline-block';
       } else {
         winnerCard.innerHTML = '<div>No winner yet</div>';
-        playWinnerBtn.style.display = 'none';
+      }
+
+      if (playWinnerButtons) {
+        playWinnerButtons.innerHTML = winners.map((w) => {
+          const n = (w.filename || 'Untitled').replace(/\.sb3$/i, '') || 'Untitled';
+          const label = winners.length === 1
+            ? "Play Winner's Game"
+            : `Play ${n}`;
+          return `<button type="button" onclick="playWinningProject(${w.index})">${label}</button>`;
+        }).join('');
       }
 
       rankingList.innerHTML = (results.ranking || []).map(entry => {
@@ -2008,15 +2036,15 @@
       updateRatingUi();
     }
 
-    function playWinningProject() {
-      if (!winnerProjectIndexes.length) return;
-      const playIndex = winnerProjectIndex ?? winnerProjectIndexes[0];
+    function playWinningProject(projectIndex) {
+      const playIndex = (typeof projectIndex === 'number')
+        ? projectIndex
+        : (winnerProjectIndex ?? winnerProjectIndexes[0]);
+      if (playIndex == null) return;
+      winnerProjectIndex = playIndex;
       const idx = finalProjects.findIndex(p => p.index === playIndex);
       if (idx < 0) return;
       openEndPlay(idx);
-      // next click plays the other tied winner, if any
-      const currentPos = winnerProjectIndexes.indexOf(playIndex);
-      winnerProjectIndex = winnerProjectIndexes[(currentPos + 1) % winnerProjectIndexes.length];
     }
 
     async function exportAllProjects() {
@@ -2223,6 +2251,15 @@
     window.exportAllProjects = exportAllProjects;
     window.forceEndGame = forceEndGame;
     window.handoff = handoff;
+    window.playWinningProject = playWinningProject;
+
+    function startFreshGame() {
+      blockAutoRejoin = true;
+      currentRoom = null;
+      localStorage.removeItem('telescratched_code');
+      location.reload();
+    }
+    window.startFreshGame = startFreshGame;
     window.devAssign = devAssign;
     window.reloadMyEditor = reloadMyEditor;
 
@@ -2242,8 +2279,8 @@
       document.getElementById('sidebar').style.display = 'none';
       document.getElementById('gameEndSection').classList.remove('hidden');
       document.getElementById('resultsPanel').style.display = 'none';
-      document.getElementById('playWinnerBtn').style.display = 'none';
-      document.getElementById('playWinnerBtn').textContent = "Play Winner's Game";
+      const playWinnerButtons = document.getElementById('playWinnerButtons');
+      if (playWinnerButtons) playWinnerButtons.innerHTML = '';
       document.getElementById('endScreenBlurb').textContent =
         'Play each project, rate it, then submit your ratings.';
 
@@ -2695,7 +2732,7 @@
       blockAutoRejoin = true;
       alert(data?.message || 'You were disconnected. Rejoin with the same name to continue.');
       returnToStartScreen({ preferJoin: true });
-      setJoinStatus('Kicked - click Join Room with the same name to get back in.');
+      setJoinStatus('Kicked - enter the same name and room code, then click Join Room.');
     });
 
     socket.on('error', (msg) => {
