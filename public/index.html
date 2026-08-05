@@ -1316,6 +1316,59 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
+    // ===== TELESCRATCHED DEBUG LOG =====
+    // Copy everything: tsDump()   or filter console for [TS-DEBUG]
+    const TS_DEBUG = true;
+    const tsDebugLog = [];
+    const TS_DEBUG_MAX = 500;
+
+    function tsDbg(event, data) {
+      if (!TS_DEBUG) return;
+      const entry = {
+        t: new Date().toISOString(),
+        event,
+        ...(data && typeof data === 'object' ? data : { detail: data })
+      };
+      tsDebugLog.push(entry);
+      if (tsDebugLog.length > TS_DEBUG_MAX) tsDebugLog.shift();
+      console.log(`[TS-DEBUG] ${event}`, data !== undefined ? data : '');
+    }
+
+    function tsDump() {
+      const snapshot = {
+        exportedAt: new Date().toISOString(),
+        currentRoom,
+        myName,
+        myIndex,
+        lockedMyIndex,
+        serverRound,
+        saveEpoch,
+        editingProjectId,
+        pendingEditorProjectId,
+        hasAgreedThisRound,
+        currentReadyState,
+        myUploaded,
+        players,
+        agreements,
+        playerPresence,
+        gameSettings,
+        log: tsDebugLog.slice()
+      };
+      console.log('[TS-DEBUG] === FULL DUMP (copy this object) ===');
+      console.log(JSON.stringify(snapshot, null, 2));
+      console.log('[TS-DEBUG] === tip: copy(tsDumpRaw()) in Chromium to clipboard ===');
+      return snapshot;
+    }
+
+    function tsDumpRaw() {
+      return JSON.stringify(tsDump(), null, 2);
+    }
+
+    window.tsDump = tsDump;
+    window.tsDumpRaw = tsDumpRaw;
+    window.tsDebugLog = tsDebugLog;
+    tsDbg('boot', { href: location.href });
+
     const socket = io();
     let currentRoom = null;
     let myName = '';
@@ -1329,6 +1382,11 @@
     let lockedMyIndex = undefined;
     let serverRound = 0;
     let saveEpoch = 0; // bumped on round change; drops in-flight saves
+    let editingProjectId = null; // only set after editor finishes loading this seat's project
+    let editorLoadToken = 0;
+    let pendingEditorProjectId = null;
+    let pendingEditorLoadToken = 0;
+    let pendingEditorOnReady = null;
     let myUploaded = false;
     let pendingUploadDataURL = null;
     let agreements = [];
@@ -1341,12 +1399,24 @@
     let hasAgreedThisRound = false;
     let currentReadyState = false;
     let roundCountdownInterval = null;
-    // iframe escape
+    // iframe escape + turbowarp ready
     window.addEventListener('message', function (event) {
       if (event.origin !== window.location.origin) return;
 
       if (event.data && event.data.type === 'escapePressed' && isCleanFs) {
         exitCleanFullscreen();
+      }
+
+      if (event.data && event.data.type === 'twProjectReady') {
+        tsDbg('twProjectReadyMessage', {
+          pendingEditorProjectId,
+          pendingEditorLoadToken,
+          editorLoadToken,
+          editingProjectId
+        });
+        if (pendingEditorProjectId && pendingEditorLoadToken === editorLoadToken) {
+          markEditorReady(editorLoadToken, pendingEditorProjectId);
+        }
       }
     });
 
@@ -1416,55 +1486,228 @@
     function setServerRound(round) {
       const next = Number(round) || 0;
       if (next !== serverRound) {
+        tsDbg('roundChange', {
+          from: serverRound,
+          to: next,
+          oldEditingProjectId: editingProjectId,
+          myIndex,
+          saveEpoch: saveEpoch + 1
+        });
         serverRound = next;
         saveEpoch += 1;
+        // round changed - old editor content must not save into the new seat project
+        editingProjectId = null;
+        pendingEditorProjectId = null;
+        pendingEditorOnReady = null;
       } else {
         serverRound = next;
       }
     }
 
-    function emitProjectUpload(base64, filename, roundOverride) {
+    function emitProjectUpload(base64, filename, roundOverride, projectIdOverride) {
       const round = roundOverride != null ? roundOverride : serverRound;
-      if (!currentRoom || myIndex < 0 || !round) return;
+      const projectId = projectIdOverride || editingProjectId;
+      if (!currentRoom || myIndex < 0 || !round || !projectId) {
+        tsDbg('uploadSkipped', {
+          reason: 'not-bound',
+          currentRoom,
+          myIndex,
+          round,
+          projectId,
+          editingProjectId,
+          filename
+        });
+        return;
+      }
+      tsDbg('uploadEmit', {
+        room: currentRoom,
+        seat: myIndex,
+        round,
+        projectId,
+        filename,
+        bytesApprox: Math.floor((base64?.length || 0) * 0.75)
+      });
       socket.emit('uploadFile', {
         code: currentRoom,
         fileBase64: base64,
         filename,
         round,
-        seat: myIndex
+        seat: myIndex,
+        projectId
       });
     }
 
-    function editorUrlForSeat(seatIndex) {
+    function editorUrlForSeat(seatIndex, projectId) {
       const origin = window.location.origin;
       const bust = Date.now();
-      return `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${seatIndex}&addons=${origin}/addon.js&t=${bust}`;
+      const pid = projectId || 'unknown';
+      // bust both the editor shell and the .sb3 fetch so seats never reuse a cached project
+      const projectUrl = `${origin}/download/${currentRoom}/${seatIndex}?v=${encodeURIComponent(pid)}&t=${bust}`;
+      return `/turbowarp/editor.html?project_url=${encodeURIComponent(projectUrl)}&addons=${encodeURIComponent(origin + '/addon.js')}&t=${bust}`;
+    }
+
+    function markEditorReady(loadToken, projectId) {
+      if (loadToken !== editorLoadToken) {
+        tsDbg('editorReadyIgnored', { loadToken, editorLoadToken, projectId });
+        return;
+      }
+      if (editingProjectId === projectId) return; // already marked
+      editingProjectId = projectId;
+      pendingEditorProjectId = null;
+      tsDbg('editorReady', {
+        projectId,
+        myIndex,
+        serverRound,
+        fromOwner: document.getElementById('fromOwner')?.textContent
+      });
+      safeUpdate('loadingSpinner', el => el.style.display = 'none');
+      safeUpdate('fileStatus', el => {
+        if (/loading project/i.test(el.textContent || '')) {
+          el.textContent = 'Project loaded - you can edit and save.';
+        }
+      });
+      if (typeof pendingEditorOnReady === 'function') {
+        const cb = pendingEditorOnReady;
+        pendingEditorOnReady = null;
+        cb();
+      }
+    }
+
+    function loadEditorForSeat(data, { onReady } = {}) {
+      const embed = document.getElementById('scratchEmbed');
+      if (!embed || myIndex < 0) {
+        tsDbg('loadEditorAbort', { myIndex, hasEmbed: !!embed });
+        return;
+      }
+
+      const myProj = data.projects?.[myIndex];
+      const projectId = myProj?.id || null;
+      editingProjectId = null;
+      const loadToken = ++editorLoadToken;
+      pendingEditorProjectId = projectId;
+      pendingEditorLoadToken = loadToken;
+      pendingEditorOnReady = onReady || null;
+
+      tsDbg('loadEditorStart', {
+        seat: myIndex,
+        projectId,
+        filename: myProj?.filename,
+        owner: data.owners?.[myIndex],
+        round: data.round ?? serverRound,
+        loadToken,
+        allProjects: (data.projects || []).map((p, i) => ({
+          seat: i,
+          id: p?.id,
+          filename: p?.filename,
+          owner: data.owners?.[i]
+        }))
+      });
+
+      if (embed.contentWindow) {
+        try { embed.contentWindow.onbeforeunload = null; } catch (e) { }
+      }
+
+      safeUpdate('loadingSpinner', el => el.style.display = 'block');
+      safeUpdate('fileStatus', el => el.textContent = 'Loading project into editor...');
+      embed.src = editorUrlForSeat(myIndex, projectId);
+
+      embed.onload = async () => {
+        if (loadToken !== editorLoadToken) {
+          tsDbg('loadEditorStaleOnload', { loadToken, editorLoadToken });
+          return;
+        }
+
+        const tw = embed.contentWindow;
+        const origin = window.location.origin;
+        tsDbg('loadEditorIframeOnload', { loadToken, projectId, hasVm: !!tw?.vm });
+
+        // wait until TurboWarp VM exists (project_url may still be importing)
+        for (let i = 0; i < 40; i++) {
+          if (loadToken !== editorLoadToken) return;
+          if (tw?.vm?.runtime) break;
+          await new Promise(r => setTimeout(r, 250));
+        }
+        if (loadToken !== editorLoadToken) return;
+        tsDbg('loadEditorVmReady', { loadToken, projectId, targets: tw?.vm?.runtime?.targets?.length });
+
+        // fallback if PROJECT_LOADED message never arrives
+        setTimeout(() => {
+          if (loadToken === editorLoadToken && !editingProjectId && projectId) {
+            tsDbg('editorReadyFallbackTimeout', { projectId, loadToken });
+            markEditorReady(loadToken, projectId);
+            if (typeof onReady === 'function') onReady();
+          }
+        }, 2500);
+
+        if (tw && myProj?.filename) {
+          const cleanName = myProj.filename.replace(/\.sb3$/i, '');
+          try {
+            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
+          } catch (e) { }
+        }
+
+        try {
+          const iframeWin = embed.contentWindow;
+          const iframeDoc = embed.contentDocument || iframeWin?.document;
+          if (iframeDoc && iframeWin) {
+            const handleEsc = function (e) {
+              if (e.key === 'Escape' || e.key === 'Esc') {
+                window.parent.postMessage({ type: 'escapePressed' }, window.location.origin);
+              }
+            };
+            iframeDoc.addEventListener('keydown', handleEsc, true);
+            iframeWin.addEventListener('keydown', handleEsc, true);
+          }
+        } catch (err) {
+          console.warn('Could not add Esc listener inside iframe:', err);
+        }
+      };
     }
 
     async function performFinalSave() {
       const embed = document.getElementById('scratchEmbed');
       if (!embed || !embed.contentWindow) {
-        console.warn("Editor not ready for final save");
+        console.warn('Editor not ready for final save');
+        return false;
+      }
+      if (!editingProjectId) {
+        console.warn('Skipped final save - project not loaded');
         return false;
       }
 
       const roundAtStart = serverRound;
       const epochAtStart = saveEpoch;
       const seatAtStart = myIndex;
+      const projectIdAtStart = editingProjectId;
 
       try {
         safeUpdate('fileStatus', el =>
-          el.textContent = "Final save in progress... (usually 2-5 seconds)"
+          el.textContent = 'Final save in progress... (usually 2-5 seconds)'
         );
 
         const { base64, filename } = await saveFromEditor();
 
-        if (epochAtStart !== saveEpoch || roundAtStart !== serverRound || seatAtStart !== myIndex) {
-          console.warn('Discarded stale final save after round change');
+        if (
+          epochAtStart !== saveEpoch ||
+          roundAtStart !== serverRound ||
+          seatAtStart !== myIndex ||
+          projectIdAtStart !== editingProjectId
+        ) {
+          tsDbg('finalSaveDiscarded', {
+            epochAtStart,
+            saveEpoch,
+            roundAtStart,
+            serverRound,
+            seatAtStart,
+            myIndex,
+            projectIdAtStart,
+            editingProjectId
+          });
           return false;
         }
 
-        emitProjectUpload(base64, filename, roundAtStart);
+        emitProjectUpload(base64, filename, roundAtStart, projectIdAtStart);
+        tsDbg('finalSaveSent', { filename, projectIdAtStart, roundAtStart, seatAtStart });
 
         safeUpdate('fileStatus', el =>
           el.textContent = `Final save sent as "${filename}" - uploading now...`
@@ -1474,7 +1717,7 @@
 
         return true;
       } catch (err) {
-        console.error("Final save failed:", err);
+        console.error('Final save failed:', err);
         safeUpdate('fileStatus', el =>
           el.textContent = `Final save failed: ${err.message}. The previous version (or blank) will be used.`
         );
@@ -1720,9 +1963,14 @@
 
       const btn = document.getElementById('autoSaveBtn');
       if (!btn) return;
+      if (!editingProjectId) {
+        safeUpdate('fileStatus', el => el.textContent = 'Wait for the project to finish loading before saving.');
+        return;
+      }
 
       const roundAtStart = serverRound;
       const epochAtStart = saveEpoch;
+      const projectIdAtStart = editingProjectId;
 
       btn.disabled = true;
       btn.classList.add('save-locked');
@@ -1738,11 +1986,11 @@
 
       saveFromEditor()
         .then(({ base64, filename }) => {
-          if (epochAtStart !== saveEpoch) {
-            console.warn('Discarded stale manual save after round change');
+          if (epochAtStart !== saveEpoch || projectIdAtStart !== editingProjectId) {
+            console.warn('Discarded stale manual save after round/project change');
             return;
           }
-          emitProjectUpload(base64, filename, roundAtStart);
+          emitProjectUpload(base64, filename, roundAtStart, projectIdAtStart);
 
           safeUpdate('fileStatus', el =>
             el.textContent = `Saved as "${filename}". You can keep editing and saving! Do not press "Ready to Pass Projects" unless you are 100% sure you're finished for this round.`
@@ -2113,14 +2361,14 @@
     }
 
     function reloadMyEditor() {
-      const embed = document.getElementById('scratchEmbed');
-      if (!embed || myIndex < 0 || !currentRoom) return;
-      const origin = window.location.origin;
-      const bust = Date.now();
-      embed.src = `/turbowarp/editor.html?project_url=${origin}/download/${currentRoom}/${myIndex}&addons=${origin}/addon.js&t=${bust}`;
-      safeUpdate('fromOwner', el => {
-        // keep current label; roundAdvanced/dev update may refresh it
-      });
+      if (myIndex < 0 || !currentRoom) return;
+      const projects = [];
+      for (let i = 0; i <= myIndex; i++) {
+        projects[i] = i === myIndex
+          ? { id: editingProjectId, filename: document.getElementById('projectNameInput')?.value || 'project.sb3' }
+          : { id: null, filename: 'blank.sb3' };
+      }
+      loadEditorForSeat({ projects });
     }
 
     async function devAssign(index, file) {
@@ -2248,10 +2496,12 @@
     //   handoff()             - round 1 only, assign .sb3 files
     //   exportAllProjects()
     //   forceEndGame()
+    //   tsDump() / tsDumpRaw() - full debug dump if something breaks
     window.exportAllProjects = exportAllProjects;
     window.forceEndGame = forceEndGame;
     window.handoff = handoff;
     window.playWinningProject = playWinningProject;
+    console.log('%c[TS-DEBUG] ready — if something breaks run: tsDump()', 'color:#F8A936;font-weight:bold');
 
     function startFreshGame() {
       blockAutoRejoin = true;
@@ -2415,6 +2665,14 @@
       lockedMyIndex = myIndex;
       if (data.settings) gameSettings = data.settings;
       setServerRound(data.round);
+      tsDbg('gameStarted', {
+        myName,
+        myIndex,
+        players: data.players,
+        owners: data.owners,
+        projects: data.projects,
+        round: data.round
+      });
       safeUpdate('waitingSection', el => el.classList.add('hidden'));
       safeUpdate('settingsSection', el => el.classList.add('hidden'));
       safeUpdate('gameSection', el => el.classList.remove('hidden'));
@@ -2422,50 +2680,7 @@
       safeUpdate('sidebar', el => el.style.display = 'block');
       safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
       updateGameState(data);
-      const embed = document.getElementById('scratchEmbed');
-      if (embed) {
-        if (embed.contentWindow) {
-          embed.contentWindow.onbeforeunload = null;
-        }
-
-        embed.src = editorUrlForSeat(myIndex);
-
-        safeUpdate('loadingSpinner', el => el.style.display = 'block');
-
-        embed.onload = () => {
-          safeUpdate('loadingSpinner', el => el.style.display = 'none');
-
-          const tw = embed.contentWindow;
-          const origin = window.location.origin;
-          if (tw && tw.vm && data.projects[myIndex].filename) {
-            const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
-            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
-          }
-
-          // iframe escape
-          try {
-            const iframeWin = embed.contentWindow;
-            const iframeDoc = embed.contentDocument || iframeWin?.document;
-
-            if (iframeDoc && iframeWin) {
-              const handleEsc = function (e) {
-                if (e.key === 'Escape' || e.key === 'Esc') {
-                  window.parent.postMessage(
-                    { type: 'escapePressed' },
-                    window.location.origin
-                  );
-                }
-              };
-
-              iframeDoc.addEventListener('keydown', handleEsc, true);
-
-              iframeWin.addEventListener('keydown', handleEsc, true);
-            }
-          } catch (err) {
-            console.warn("Could not add Esc listener inside iframe:", err);
-          }
-        };
-      }
+      loadEditorForSeat(data);
       updateTimer(data.roundStartTime);
       resetRoundUI();
       enableSaveAfterDelay();
@@ -2490,53 +2705,20 @@
         lockedMyIndex = myIndex;
       }
       setServerRound(data.round);
+      tsDbg('roundAdvanced', {
+        myName,
+        myIndex,
+        lockedMyIndex,
+        round: data.round,
+        fromOwner: data.owners?.[myIndex],
+        myProject: data.projects?.[myIndex],
+        allProjects: data.projects,
+        owners: data.owners
+      });
       safeUpdate('roundNum', el => el.textContent = data.round);
       safeUpdate('fromOwner', el => el.textContent = data.owners[myIndex]);
       updateGameState(data);
-      const embed = document.getElementById('scratchEmbed');
-      if (embed) {
-        if (embed.contentWindow) {
-          embed.contentWindow.onbeforeunload = null;
-        }
-
-        embed.src = editorUrlForSeat(myIndex);
-
-        safeUpdate('loadingSpinner', el => el.style.display = 'block');
-
-        embed.onload = () => {
-          safeUpdate('loadingSpinner', el => el.style.display = 'none');
-
-          const tw = embed.contentWindow;
-          const origin = window.location.origin;
-          if (tw && tw.vm && data.projects[myIndex].filename) {
-            const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
-            tw.postMessage({ type: 'setProjectName', name: cleanName }, origin);
-          }
-
-          // iframe escape
-          try {
-            const iframeWin = embed.contentWindow;
-            const iframeDoc = embed.contentDocument || iframeWin?.document;
-
-            if (iframeDoc && iframeWin) {
-              const handleEsc = function (e) {
-                if (e.key === 'Escape' || e.key === 'Esc') {
-                  window.parent.postMessage(
-                    { type: 'escapePressed' },
-                    window.location.origin
-                  );
-                }
-              };
-
-              iframeDoc.addEventListener('keydown', handleEsc, true);
-
-              iframeWin.addEventListener('keydown', handleEsc, true);
-            }
-          } catch (err) {
-            console.warn("Could not add Esc listener inside iframe:", err);
-          }
-        };
-      }
+      loadEditorForSeat(data);
       updateTimer(data.roundStartTime);
       resetRoundUI();
       enableSaveAfterDelay();
@@ -2544,6 +2726,7 @@
       document.getElementById('sidebar').classList.add('visible');
       safeUpdate('roundNumSidebar', el => el.textContent = data.round);
       safeUpdate('maxRounds', el => el.textContent = data.maxRounds || (gameSettings.cycles * players.length));
+      startAutoBackup();
     });
 
     socket.on('gameState', updateGameState);
@@ -2553,6 +2736,10 @@
       if (Array.isArray(data.presence)) {
         playerPresence = {};
         data.presence.forEach(p => { playerPresence[p.name] = !!p.online; });
+      }
+      if (myIndex < 0 || !data.projects?.[myIndex]) {
+        updatePlayerSidebar();
+        return;
       }
       const myProj = data.projects[myIndex];
 
@@ -2587,11 +2774,13 @@
     });
 
     socket.on('uploadSuccess', (data) => {
+      tsDbg('uploadSuccess', { filename: data.filename, editingProjectId, myIndex, serverRound });
       confirmUpload(data.filename);
     });
 
     socket.on('agreementUpdate', (agreementsUpdate) => {
       agreements = agreementsUpdate;
+      tsDbg('agreementUpdate', { agreements, myIndex, editingProjectId });
       safeUpdate('agreementsList', el => el.textContent = agreements.join(', ') || 'None');
       updatePlayerSidebar();
     });
@@ -2614,6 +2803,7 @@
     // forced save
     socket.on('autoSaveNow', async () => {
       if (hasAgreedThisRound || myUploaded) return;
+      if (!editingProjectId) return;
 
       safeUpdate('fileStatus', el =>
         el.textContent = "Time's up! Forcing final save now..."
@@ -2650,6 +2840,14 @@
       console.log('Successfully rejoined game');
       blockAutoRejoin = false;
       setJoinStatus('');
+      tsDbg('rejoinedGame', {
+        myIndex: data.myIndex,
+        round: data.round,
+        projects: data.projects,
+        owners: data.owners,
+        ended: data.ended,
+        roundEnding: data.roundEnding
+      });
 
       players = data.players;
       myIndex = data.myIndex;
@@ -2687,20 +2885,7 @@
       }
       safeUpdate('roundNum', el => el.textContent = data.round);
 
-      const embed = document.getElementById('scratchEmbed');
-      const origin = window.location.origin;
-
-      safeUpdate('loadingSpinner', el => el.style.display = 'block');
-      embed.src = editorUrlForSeat(myIndex);
-
-      embed.onload = () => {
-        safeUpdate('loadingSpinner', el => el.style.display = 'none');
-
-        if (embed.contentWindow && data.projects?.[myIndex]?.filename) {
-          const cleanName = data.projects[myIndex].filename.replace(/\.sb3$/i, '');
-          embed.contentWindow.postMessage({ type: 'setProjectName', name: cleanName }, origin);
-        }
-      };
+      loadEditorForSeat(data);
 
       agreements = data.agreements || [];
       currentReadyState = !!data.currentReadyState;
@@ -2747,6 +2932,13 @@
     });
 
     socket.on('roundEnding', async () => {
+      tsDbg('roundEnding', {
+        serverRound,
+        myIndex,
+        editingProjectId,
+        hasAgreedThisRound,
+        myUploaded
+      });
       console.log('Round ending - performing final save during 10s grace period');
       pauseRoundTimer();
 
@@ -3149,29 +3341,33 @@
 
       backupSaveInterval = setInterval(() => {
         const isGameVisible = !document.getElementById('gameSection').classList.contains('hidden');
-        if (isGameVisible && !hasAgreedThisRound && !isTimeoutActive) {
-          console.log("Running 30-second background backup...");
+        if (isGameVisible && !hasAgreedThisRound && !isTimeoutActive && editingProjectId) {
+          console.log('Running 30-second background backup...');
 
           const roundAtStart = serverRound;
           const epochAtStart = saveEpoch;
+          const projectIdAtStart = editingProjectId;
           saveFromEditor()
             .then(({ base64, filename }) => {
               if (epochAtStart !== saveEpoch || roundAtStart !== serverRound) return;
-              emitProjectUpload(base64, filename, roundAtStart);
+              if (projectIdAtStart !== editingProjectId) return;
+              emitProjectUpload(base64, filename, roundAtStart, projectIdAtStart);
             })
-            .catch(err => console.warn("Background backup skipped:", err));
+            .catch(err => console.warn('Background backup skipped:', err));
         }
       }, 30000);
     }
 
     // exit save
     window.onbeforeunload = function () {
-      if (currentRoom && !document.getElementById('gameSection').classList.contains('hidden')) {
+      if (currentRoom && !document.getElementById('gameSection').classList.contains('hidden') && editingProjectId) {
         const embed = document.getElementById('scratchEmbed');
         if (embed && embed.contentWindow) {
           const roundAtStart = serverRound;
+          const projectIdAtStart = editingProjectId;
           saveFromEditor().then(({ base64, filename }) => {
-            emitProjectUpload(base64, filename, roundAtStart);
+            if (projectIdAtStart !== editingProjectId) return;
+            emitProjectUpload(base64, filename, roundAtStart, projectIdAtStart);
           });
         }
       }

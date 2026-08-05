@@ -24,6 +24,25 @@ const upload = multer({ storage: multer.memoryStorage() });
 const BLANK_BUFFER = fs.readFileSync(path.join(__dirname, 'public', 'blank.sb3'));
 const rooms = new Map();
 
+function dbg(...args) {
+  const ts = new Date().toISOString();
+  console.log(`[TS-DEBUG ${ts}]`, ...args);
+}
+
+function projectSnapshot(room) {
+  if (!room?.projects) return [];
+  return room.projects.map((p, i) => ({
+    seat: i,
+    player: room.players[i]?.name || null,
+    online: !!room.players[i]?.id,
+    owner: room.owners?.[i] || null,
+    projectId: p?.id || null,
+    filename: p?.filename || null,
+    bytes: p?.buffer?.length || 0,
+    uploaded: !!room.uploaded?.[i]
+  }));
+}
+
 app.use(express.static('public'));
 app.use('/turbowarp', express.static(path.join(__dirname, 'public/turbowarp')));
 app.use(express.json());
@@ -63,6 +82,18 @@ app.get('/addon.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
     export default async function ({ vm, renderer }) {
+      const notifyReady = () => {
+        try {
+          window.parent.postMessage({ type: 'twProjectReady' }, window.parent.location.origin);
+        } catch (e) {}
+      };
+
+      if (vm?.runtime) {
+        vm.runtime.on('PROJECT_LOADED', notifyReady);
+        // if project already loaded by the time addon mounts
+        setTimeout(notifyReady, 0);
+      }
+
       window.addEventListener('message', async (e) => {
         if (e.origin !== window.parent.location.origin) return;
         if (e.data.type === 'saveAndUpload') {
@@ -108,6 +139,20 @@ function getRoom(code) {
   return rooms.get(normalizeCode(code));
 }
 
+function newProjectId() {
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function makeProject(buffer, filename = 'blank.sb3', id = null) {
+  const src = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || BLANK_BUFFER);
+  return {
+    id: id || newProjectId(),
+    // always copy so seats never share the same Buffer reference
+    buffer: Buffer.from(src),
+    filename: filename || 'blank.sb3'
+  };
+}
+
 function connectedPlayers(room) {
   return room.players.filter(p => p.id);
 }
@@ -138,7 +183,7 @@ function getFullGameState(room, startTime = null) {
   return {
     players: room.players.map(p => p.name),
     presence: room.players.map(p => ({ name: p.name, online: !!p.id })),
-    projects: room.projects.map(p => ({ filename: p.filename })),
+    projects: room.projects.map(p => ({ id: p.id, filename: p.filename })),
     owners: room.owners,
     uploaded: room.uploaded.map((u, i) => ({ player: room.players[i].name, uploaded: u })),
     agreements: agreementNames(room),
@@ -178,6 +223,8 @@ function softLeaveSeat(room, code, idx, { notifyKick = false } = {}) {
 
   emitPresence(room, code);
   emitAgreements(room, code);
+
+  dbg(`softLeave seat=${idx} name=${player.name} kick=${notifyKick} room=${code}`, projectSnapshot(room));
 
   if (room.started && !room.ended) {
     maybeAdvanceFromAgreements(room, code);
@@ -225,6 +272,7 @@ function beginRoundEnding(room, code, { fromTimeout = false } = {}) {
 
   room.roundEnding = true;
   clearRoundTimers(room);
+  dbg(`roundEnding room=${code} round=${room.currentRound} fromTimeout=${fromTimeout}`, projectSnapshot(room));
 
   if (fromTimeout) {
     io.to(code).emit('roundTimeout');
@@ -240,8 +288,11 @@ function beginRoundEnding(room, code, { fromTimeout = false } = {}) {
     room.roundActive = false;
     room.projects.forEach((proj, i) => {
       if (!room.uploaded[i] || !proj.buffer || proj.buffer.length === 0) {
-        proj.buffer = proj.buffer && proj.buffer.length ? proj.buffer : Buffer.from(BLANK_BUFFER);
-        proj.filename = proj.filename || 'blank.sb3';
+        if (!proj.buffer || !proj.buffer.length) {
+          // keep same project id - only fill missing bytes
+          room.projects[i] = makeProject(Buffer.from(BLANK_BUFFER), proj.filename || 'blank.sb3', proj.id);
+          dbg(`filled blank seat=${i} projectId=${room.projects[i].id} room=${code}`);
+        }
         room.uploaded[i] = true;
       }
     });
@@ -266,7 +317,7 @@ function endGameNow(room, code) {
 
 function getEndPayload(room) {
   return {
-    projects: room.projects.map(p => ({ filename: p.filename })),
+    projects: room.projects.map(p => ({ id: p.id, filename: p.filename })),
     originalOwners: room.owners.slice(),
     players: room.players.map(p => p.name)
   };
@@ -426,20 +477,52 @@ function advanceRound(room, code) {
   clearRoundTimers(room);
 
   const maxRounds = room.settings.cycles * room.players.length;
-  // end on the last completed round - do NOT rotate again (that handed people their own project)
+  const before = projectSnapshot(room);
+  dbg(`advanceRound start room=${code} round=${room.currentRound}/${maxRounds}`, before);
+
+  // end on the last completed round - do NOT rotate again
   if (room.currentRound >= maxRounds) {
+    dbg(`advanceRound -> endGame room=${code} (no rotate)`);
     endGameNow(room, code);
     return;
   }
 
+  // rotate project OBJECTS (stable ids move with content)
   const lastProject = room.projects.pop();
   const lastOwner = room.owners.pop();
   room.projects.unshift(lastProject);
   room.owners.unshift(lastOwner);
 
+  // sanity: every seat must still have a unique project id
+  const ids = room.projects.map(p => p.id);
+  if (new Set(ids).size !== ids.length) {
+    console.error(`[TS-DEBUG] DUPLICATE PROJECT IDS after rotate room=${code}:`, ids);
+  }
+
+  // detect identical buffers across seats (true content duplicates)
+  for (let i = 0; i < room.projects.length; i++) {
+    for (let j = i + 1; j < room.projects.length; j++) {
+      const a = room.projects[i];
+      const b = room.projects[j];
+      if (a.buffer && b.buffer && a.buffer.length === b.buffer.length && a.buffer.equals(b.buffer)) {
+        console.error(
+          `[TS-DEBUG] DUPLICATE BUFFER CONTENT room=${code} seats ${i} & ${j}`,
+          { idA: a.id, idB: b.id, filenameA: a.filename, filenameB: b.filename, bytes: a.buffer.length }
+        );
+      }
+    }
+  }
+
   room.uploaded.fill(false);
   room.agreements.clear();
   room.currentRound++;
+
+  const after = projectSnapshot(room);
+  dbg(`advanceRound done room=${code} nowRound=${room.currentRound}`, after);
+  dbg(`rotate map room=${code}:`, before.map((b, i) => {
+    const movedTo = after.findIndex(a => a.projectId === b.projectId);
+    return `${b.player} had ${b.projectId?.slice(0, 8)} -> seat ${movedTo} (${after[movedTo]?.player})`;
+  }));
 
   const newStartTime = Date.now();
   room.currentRoundStartTime = newStartTime;
@@ -594,49 +677,79 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Some players are offline. Kick them or wait for them to rejoin.');
     }
     room.started = true;
-    room.projects = room.players.map(() => ({
-      buffer: Buffer.from(BLANK_BUFFER),
-      filename: 'blank.sb3'
-    }));
+    room.projects = room.players.map(() => makeProject(Buffer.from(BLANK_BUFFER), 'blank.sb3'));
     room.owners = room.players.map(p => p.name);
     room.uploaded = room.players.map(() => false);
     room.agreements = new Set();
     room.currentRound = 1;
     const startTime = Date.now();
+    dbg(`gameStarted room=${roomCode}`, projectSnapshot(room));
     io.to(roomCode).emit('gameStarted', getFullGameState(room, startTime));
     startRoundTimer(room, roomCode, startTime);
   });
 
-  socket.on('uploadFile', ({ code, fileBase64, filename, round, seat }) => {
+  socket.on('uploadFile', ({ code, fileBase64, filename, round, seat, projectId }) => {
     const roomCode = normalizeCode(code);
     const room = rooms.get(roomCode);
-    if (!room || room.ended) return;
-    // active round, or still in the 10s ending grace
+    if (!room || room.ended) {
+      dbg(`upload rejected: no room/ended code=${code}`);
+      return;
+    }
     if (!room.roundActive && !room.roundEnding) {
+      dbg(`upload rejected: round not active room=${roomCode}`);
       return socket.emit('error', 'Round not active.');
     }
 
     const idx = room.players.findIndex(p => p.id === socket.id);
-    if (idx === -1) return;
+    if (idx === -1) {
+      dbg(`upload rejected: socket not in room room=${roomCode} socket=${socket.id}`);
+      return;
+    }
 
-    // reject late saves from a previous round (would overwrite the newly rotated project)
+    const playerName = room.players[idx].name;
     const uploadRound = Number(round);
     if (!Number.isInteger(uploadRound) || uploadRound !== room.currentRound) {
-      console.log(`Dropped stale upload from ${room.players[idx].name} (round ${uploadRound} vs ${room.currentRound})`);
+      dbg(`UPLOAD DROP stale round player=${playerName} got=${uploadRound} need=${room.currentRound} seat=${idx}`, projectSnapshot(room));
       return;
     }
 
     if (seat != null && Number(seat) !== idx) {
-      console.log(`Dropped upload with wrong seat from ${room.players[idx].name}`);
+      dbg(`UPLOAD DROP wrong seat player=${playerName} clientSeat=${seat} realSeat=${idx}`);
+      return;
+    }
+
+    const current = room.projects[idx];
+    if (!current?.id) {
+      dbg(`UPLOAD DROP missing project player=${playerName} seat=${idx}`);
+      return;
+    }
+
+    if (!projectId || projectId !== current.id) {
+      dbg(
+        `UPLOAD DROP projectId mismatch player=${playerName} seat=${idx} clientId=${projectId} seatId=${current.id}`,
+        projectSnapshot(room)
+      );
+      return;
+    }
+
+    if (!fileBase64 || typeof fileBase64 !== 'string' || fileBase64.length < 32) {
+      dbg(`UPLOAD DROP empty payload player=${playerName} seat=${idx}`);
       return;
     }
 
     try {
-      room.projects[idx] = { buffer: Buffer.from(fileBase64, 'base64'), filename };
+      const bytes = Buffer.from(fileBase64, 'base64');
+      room.projects[idx] = makeProject(bytes, filename || current.filename, current.id);
       room.uploaded[idx] = true;
-      io.to(roomCode).emit('playerUploaded', { name: room.players[idx].name, filename });
-      socket.emit('uploadSuccess', { filename });
-    } catch (e) { socket.emit('error', 'Upload failed.'); }
+      dbg(
+        `UPLOAD OK player=${playerName} seat=${idx} projectId=${current.id.slice(0, 8)} file=${room.projects[idx].filename} bytes=${bytes.length} round=${room.currentRound}`
+      );
+      io.to(roomCode).emit('playerUploaded', { name: room.players[idx].name, filename: room.projects[idx].filename });
+      socket.emit('uploadSuccess', { filename: room.projects[idx].filename });
+    } catch (e) {
+      dbg(`UPLOAD FAIL player=${playerName}`, e.message);
+      socket.emit('error', 'Upload failed.');
+    }
   });
 
   // host only, round 1 only: force-assign an .sb3 into a player slot
@@ -657,10 +770,12 @@ io.on('connection', (socket) => {
 
     try {
       const safeName = (filename || `project-${idx}.sb3`).replace(/[^\w.\-]+/g, '_');
-      room.projects[idx] = {
-        buffer: Buffer.from(fileBase64, 'base64'),
-        filename: safeName.endsWith('.sb3') ? safeName : `${safeName}.sb3`
-      };
+      const existingId = room.projects[idx]?.id;
+      room.projects[idx] = makeProject(
+        Buffer.from(fileBase64, 'base64'),
+        safeName.endsWith('.sb3') ? safeName : `${safeName}.sb3`,
+        existingId
+      );
       room.uploaded[idx] = true;
       if (typeof ownerName === 'string' && ownerName.trim()) {
         room.owners[idx] = ownerName.trim().slice(0, 16);
@@ -702,6 +817,8 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomCode);
     if (!room || !room.roundActive || room.roundEnding) return;
     room.agreements.add(socket.id);
+    const who = room.players.find(p => p.id === socket.id)?.name;
+    dbg(`agreeNext room=${roomCode} player=${who} agreements=${agreementNames(room).join(',')}`);
     emitAgreements(room, roomCode);
     maybeAdvanceFromAgreements(room, roomCode);
   });
